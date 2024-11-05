@@ -166,20 +166,6 @@ function plot(surf::Surface2D)
     Meshes.viz(simple_mesh, 
                 color = clamp.(colors, -vmax, vmax), 
                 showsegments = true, 
-                segmentcolor = RGBA(0,0,0,0.05),
-                colormap = :balance)
-end
-
-function plotQ(surf::Surface2DPQ)
-    points = [(p.x, p.y) for p in surf._mesh._vertices]
-    connec = [connect((t.v1 , t.v2, t.v3)) for t in surf._mesh._triangles]
-    colors = [surf._Q_values[i] for i = 1:length(surf._mesh._vertices)]
-    simple_mesh   = SimpleMesh(points, connec)
-    # println(simple_mesh)
-    vmax = StatsBase.percentile(abs.(colors), 95)
-    Meshes.viz(simple_mesh, 
-                color = clamp.(colors, -vmax, vmax), 
-                showsegments = true, 
                 segmentcolor = RGBA(0,0,0,0.1),
                 colormap = :balance)
 end
@@ -297,6 +283,9 @@ function find_zeros(p1::Vertex, p2::Vertex,
     end
     
     p = fr/(fr - fl)
+    if (p < 0.) || (p > 1.)
+        println("Nopr")
+    end
     pc =  interp(pl, pr, p)
     # println("pc: ", pc)
     fc = f(pc)
@@ -372,8 +361,8 @@ function level_set_helper(surf::Surface2D,
 
             if vals[i1] * vals[i2] < 0
                 pc, dfc, dlc = find_zeros(ps[i1], ps[i2], 
-                                          fs[i1], fs[i2], 
-                                          surf._Q_fn)
+                                            vals[i1], vals[i2],
+                                          x -> surf._Q_fn(x) - c)
                 push!(pts_, pc)
                 push!(dfs_, dfc)
                 push!(dls_, dlc)
@@ -475,7 +464,7 @@ function plot_level_set!(l_set::Vector{Edge})
     for edge in l_set 
         segment = Meshes.Segment((edge.p1.x, edge.p1.y), 
                                 (edge.p2.x, edge.p2.y))
-        viz!(segment, color = "black")
+        viz!(segment, color = RGBA(50,0,50,0.5))
     end
 end
 
@@ -538,14 +527,14 @@ function integrate1D(l_set::Vector{Edge}, grad::Vector{Vector{Float64}}, p::Any,
 end
 
 
-mesh = get_square_grid(1., 1., 13)
+mesh = get_square_grid(1., 1., 21)
 
 function p_fn(v)
     return 1.0
 end
 
 function q_fn(v) 
-    return 0.2 - (v.x-0.5)^2 - (v.y-0.5)^2
+    return 1e-10 - cos.(2* π *  v.x) - cos.(2 * π * v.y)
 end
 
 function f_fn(v)
@@ -556,13 +545,28 @@ t0  = time()
 surf = Surface2D(mesh, q_fn)
 # println(level_set_helper(surf, 0., 1, ))
 println("time: ", time() - t0, " create mesh")
-level_set_edges, gradients = level_set!(surf, 0., 4, 1e-6)
-println("time: ", time() - t0, " level set: ", length(level_set_edges))
-res = integrate1D(level_set_edges, gradients, p_fn, 5,  1e-9)
+
+level_set_edges1, gradients1 = level_set!(surf, -0.1, 4, 1e-6)
+println("time: ", time() - t0, " level set: ", length(level_set_edges1))
+res = integrate1D(level_set_edges1, gradients1, p_fn, 4,  1e-10)
 println("time: ", time() - t0," integral: ", res)
 
+level_set_edges2, gradients2 = level_set!(surf, 0.0, 4, 1e-6)
+println("time: ", time() - t0, " level set: ", length(level_set_edges))
+res = integrate1D(level_set_edges2, gradients2, p_fn, 4,  1e-10)
+println("time: ", time() - t0," integral: ", res)
+
+level_set_edges3, gradients3 = level_set!(surf, 0.1, 4, 1e-6)
+println("time: ", time() - t0, " level set: ", length(level_set_edges))
+res = integrate1D(level_set_edges3, gradients3, p_fn, 4,  1e-10)
+println("time: ", time() - t0," integral: ", res)
+
+
+
 p = plot(surf)
-plot_level_set!(level_set_edges)
+plot_level_set!(level_set_edges1)
+plot_level_set!(level_set_edges2)
+plot_level_set!(level_set_edges3)
     
 Plots.display(p)
 
