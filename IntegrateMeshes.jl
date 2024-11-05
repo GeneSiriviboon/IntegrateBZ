@@ -31,6 +31,7 @@ struct Vertex2D <: Vertex
 end
 
 Base.:+(v1::Vertex2D, v2::Vertex2D) = Vertex2D(v1.x + v2.x, v1.y + v2.y)
+Base.:+(c::Float64, v2::Vertex2D) = Vertex2D(c + v2.x, c + v2.y)
 Base.:-(v1::Vertex2D, v2::Vertex2D) = Vertex2D(v1.x - v2.x, v1.y - v2.y)
 Base.:/(v::Vertex2D, c::Float64) = Vertex2D(v.x /c, v.y /c)
 Base.:*(c::Float64, v::Vertex2D) = Vertex2D(v.x *c, v.y*c)
@@ -57,7 +58,7 @@ struct Surface2D<:Surface
     function Surface2D(mesh::Mesh2D, f::Any)
         values = []
         for pos in mesh._vertices
-            Base.push!(values, f(pos.x, pos.y))
+            Base.push!(values, f(pos))
         end
         new(mesh, values, f)
     end
@@ -98,7 +99,7 @@ struct Surface2DPQ <: Surface
     end
 end
 
-function get_square_grid(X, Y, n)::Mesh2D
+function get_square_grid(X, Y, n, rand_pos = 0.0)::Mesh2D
     dx = X/n
     dy = Y/n
     mesh = Mesh2D()
@@ -106,17 +107,45 @@ function get_square_grid(X, Y, n)::Mesh2D
     #(i, j) vertices locate at (i - 1) * (n+1) + j 
     for i = 1:n+1 
         for j = 1:n+1
-            Base.push!(mesh._vertices, Vertex2D((i-1)*dx, (j-1)*dy))
+            x = (i-1)*dx
+            y = (j-1)*dy
+            
+            if i > 1 && i < n+1
+                x = clamp(x * (1 - rand_pos/2 + rand_pos*rand()), 0, X)
+            end
+            
+            if j > 1 && j < n+1
+                y = clamp(y * (1 - rand_pos/2 + rand_pos*rand()), 0, Y)
+            end
+
+            Base.push!(mesh._vertices, 
+                        Vertex2D(x, y))
+
             if i < n+1  && j < n+1
                 v1 = (i - 1) * (n+1) + j
                 v2 = (i) * (n+1) + j
                 v3 = (i - 1) * (n+1) + (j+1)
                 v4 = (i) * (n+1) + (j+1)
-                Base.push!(mesh._triangles,Triangle(v1, v2, v3))
-                Base.push!(mesh._triangles,Triangle(v3, v2, v4))
+                v5 = (n+1)*(n+1) + (i - 1) * n + j
+
+                Base.push!(mesh._triangles,Triangle(v1, v2, v5))  
+                Base.push!(mesh._triangles,Triangle(v1, v5, v3))
+                Base.push!(mesh._triangles,Triangle(v2, v4, v5))
+                Base.push!(mesh._triangles,Triangle(v4, v3, v5))
             end
         end
     end
+
+    for i=1:n
+        for j=1:n
+            x = (i-0.5)*dx* (1 - rand_pos/2 + rand_pos*rand())
+            y = (j-0.5)*dy* (1 - rand_pos/2 + rand_pos*rand())
+            Base.push!(mesh._vertices, 
+                        Vertex2D(x, y))
+        end
+    end
+
+    println("n: ", n, " len ", length(mesh._vertices))
     return mesh
 end
 
@@ -137,7 +166,7 @@ function plot(surf::Surface2D)
     Meshes.viz(simple_mesh, 
                 color = clamp.(colors, -vmax, vmax), 
                 showsegments = true, 
-                segmentcolor = RGBA(0,0,0,0.1),
+                segmentcolor = RGBA(0,0,0,0.05),
                 colormap = :balance)
 end
 
@@ -195,32 +224,11 @@ function subsample!(surf::Surface2D, i::Int)
     
     u1, u2, u3 = surf._mesh._vertices[L+1], surf._mesh._vertices[L+2], surf._mesh._vertices[L + 3]
     
-    Base.push!(surf._values, surf._Q_fn(u1.x, u1.y))
-    Base.push!(surf._values, surf._Q_fn(u2.x, u2.y))
-    Base.push!(surf._values, surf._Q_fn(u3.x, u3.y))
+    Base.push!(surf._values, surf._Q_fn(u1))
+    Base.push!(surf._values, surf._Q_fn(u2))
+    Base.push!(surf._values, surf._Q_fn(u3))
 end
 
-function subsample!(surf::Surface2DPQ, i::Int)
-    L = length(surf._mesh._vertices)
-
-    subsample!(surf._mesh, i)
-    area =  surf._areas[i]/4
-    surf._areas[i] = area
-    Base.push!(surf._areas,  area)
-    Base.push!(surf._areas,  area)
-    Base.push!(surf._areas,  area)
-    
-    u1, u2, u3 = surf._mesh._vertices[L+1], surf._mesh._vertices[L+2], surf._mesh._vertices[L + 3]
-    
-    Base.push!(surf._P_values, surf._P_fn(u1.x, u1.y))
-    Base.push!(surf._P_values, surf._P_fn(u2.x, u2.y))
-    Base.push!(surf._P_values, surf._P_fn(u3.x, u3.y))
-
-    Base.push!(surf._Q_values, surf._Q_fn(u1.x, u1.y))
-    Base.push!(surf._Q_values, surf._Q_fn(u2.x, u2.y))
-    Base.push!(surf._Q_values, surf._Q_fn(u3.x, u3.y))
-
-end
 
 function subsample_check(surf::Surface2D, abs_err::Float64, i::Int)::Bool
     m = surf._mesh._triangles[i]
@@ -251,7 +259,6 @@ function subsample!(surf::Surface2D, abs_err::Float64, depth::Int)
     for n = 1:depth
         idx_new::Vector{Int} = []
         if length(idxs) > 0
-            println(n)
             for i in idxs
                 success = subsample_check(surf, abs_err, i)
                 if !success
@@ -274,132 +281,12 @@ function interp(u::Vertex2D, v::Vertex2D, p::Float64)
 end
 
 
-# function level_set_helper(surf::Surface2D, c::Float64, i::Int)::Union{Edge, Nothing}
-#     t = surf._mesh._triangles[i]
-#     f1, f2, f3 = surf._values[t.v1], surf._values[t.v2], surf._values[t.v3]
-#     p1, p2, p3 = surf._mesh._vertices[t.v1], surf._mesh._vertices[t.v2], surf._mesh._vertices[t.v3]
-#     val1 = f1 - c; val2 = f2 - c; val3 = f3 - c
-#     pts = []
-
-#     if val1 == 0
-#         push!(pts, p1)
-#     end
-
-#     if val2 == 0
-#         push!(pts, p2)
-#     end
-
-#     if val3 == 0
-#         push!(pts, p3)
-#     end
-
-    
-#     if val1 * val2 < 0
-#         p = val2/(val2 - val1)
-#         push!(pts, interp(p1, p2, p))
-#     end
-
-#     if val2 * val3 < 0
-#         p = val3/(val3 - val2)
-#         push!(pts, interp(p2, p3, p))
-#     end
-
-#     if val3 * val1 < 0
-#         p = val3/(val3 - val1)
-#         push!(pts, interp(p1, p3, p))
-#     end
-
-    
-#     if length(pts) == 2
-#         return Edge(pts[1], pts[2])
-#     else
-#         return nothing 
-#     end
-# end
-
 norm(v::Vertex2D) = sqrt(v.x^2 + v.y^2)
 
 
-function level_set_helper(surf::Surface2DPQ, 
-                            c::Float64, 
-                            i::Int)::Union{Nothing, Tuple{Edge, Vector{Float64}}}
-    t = surf._mesh._triangles[i]
-    f1, f2, f3 = surf._Q_values[t.v1], surf._Q_values[t.v2], surf._Q_values[t.v3]
-    p1, p2, p3 = surf._mesh._vertices[t.v1], surf._mesh._vertices[t.v2], surf._mesh._vertices[t.v3]
-    val1 = f1 - c; val2 = f2 - c; val3 = f3 - c
-    
-    pts = []
-    df = []
-    dl = []
-
-    dl12 = p2 - p1
-    df12 = f2 - f1 
-    
-    dl23 = p3 - p2
-    df23 = f3 - f2 
-    
-    dl31 = p1 - p3
-    df31 = f1 - f3 
-
-
-    if val1 == 0
-        push!(pts, p1)
-        push!(df, df12)
-        push!(dl, dl12)
-    end
-
-    if val2 == 0
-        push!(pts, p2)
-        push!(df, df23)
-        push!(dl, dl23)
-    end
-
-    if val3 == 0
-        push!(pts, p3)
-        push!(df, df31)
-        push!(dl, dl31)
-    end
-    
-    if val1 * val2 < 0
-        p = val2/(val2 - val1)
-        push!(pts, interp(p1, p2, p))
-        push!(df, df12)
-        push!(dl, dl12)
-    end
-
-    if val2 * val3 < 0
-        p = val3/(val3 - val2)
-        push!(pts, interp(p2, p3, p))
-        push!(df, df23)
-        push!(dl, dl23)
-    end
-
-    if val3 * val1 < 0
-        p = val3/(val3 - val1)
-        push!(pts, interp(p1, p3, p))
-        push!(df, df31)
-        push!(dl, dl31)
-    end
-
-    
-    if length(pts) == 2
-        edge =  Edge(pts[1], pts[2])
-        du::Vertex2D = pts[2] - pts[1]
-        du = du/norm(du)
-        grad1 = abs(df[1]/(dl[1].x * du.y - dl[1].y * du.x))
-        grad2 = abs(df[2]/(dl[2].x * du.y - dl[2].y * du.x))
-        grad = [grad1, grad2]
-        return edge, grad
-    else
-        return nothing 
-    end
-
-
-end
-
-function find_zeros(p1::Vertex2D, p2::Vertex2D, 
+function find_zeros(p1::Vertex, p2::Vertex, 
                     f1::Float64, f2::Float64,
-                    f::Any, steps = 2)
+                    f::Any, steps = 2)::Tuple{Vertex2D, Float64, Vertex2D}
     fl, fr = f1, f2
     pl, pr = p1, p2
     dl = pr - pl
@@ -408,9 +295,11 @@ function find_zeros(p1::Vertex2D, p2::Vertex2D,
         fl, fr  = f2, f1
         pl, pr = p2, p1
     end
+    
     p = fr/(fr - fl)
     pc =  interp(pl, pr, p)
-    fc = f(pc.x, pc.y)
+    # println("pc: ", pc)
+    fc = f(pc)
 
     for i=1:steps
         if fc == 0
@@ -426,95 +315,92 @@ function find_zeros(p1::Vertex2D, p2::Vertex2D,
         end
         p = fr/(fr - fl)
         pc =  interp(pl, pr, p)
-        fc = f(pc.x, pc.y)
+        fc = f(pc)
     end
 
     return pc, (fr - fl), dl
 end
+
+#TODO: has to deals with the edge cases
 function level_set_helper(surf::Surface2D, 
     c::Float64, 
-    i::Int)::Union{Nothing, Tuple{Edge, Vector{Float64}}}
+    i::Int,
+    tol::Float64)::Tuple{Bool, Union{Nothing, Tuple{Edge, Vector{Float64}}}}
+    
     t = surf._mesh._triangles[i]
-    f1, f2, f3 = surf._values[t.v1], surf._values[t.v2], surf._values[t.v3]
-    p1, p2, p3 = surf._mesh._vertices[t.v1], surf._mesh._vertices[t.v2], surf._mesh._vertices[t.v3]
-    val1 = f1 - c; val2 = f2 - c; val3 = f3 - c
 
-    pts = []
-    df = []
-    dl = []
+    fs  = [surf._values[t.v1], surf._values[t.v2], surf._values[t.v3]]
+    ps  = [surf._mesh._vertices[t.v1], surf._mesh._vertices[t.v2], surf._mesh._vertices[t.v3]]
+    vals = [fs[1] - c,  fs[2] - c,  fs[3] - c]
 
+    e = nothing 
+    is_subsample = false
 
-    if val1 == 0
-    push!(pts, p1)
-    push!(df, df12)
-    push!(dl, dl12)
+    num_zeros = Int(vals[1] == 0) + Int(vals[2] == 0) + Int(vals[3] == 0)
+
+    if  num_zeros == 3
+        is_subsample = true
+        edge = Edge(ps[1], ps[2])
+        grad = 0.0
+        e = edge, grad
+    elseif  num_zeros == 2
+        for i = 0:2
+            i1 = i+1
+            i2 = (i+1)%3+1
+            i3 = (i+2)%3+1
+            if vals[i1] == 0 && vals[i2] == 0
+                edge = Edge(ps[i1], ps[i2])
+                df = fs[i1] - fs[i3]
+                dl = ps[i2] - ps[i3]
+                du = ps[i2] - ps[i2]
+                grad1 = abs(df/(dl.x * du.y - dl.y * du.x))
+                
+                grad = [grad1, grad1]
+                
+                e = (edge, grad)
+                is_subsample = level_set_is_subsample(edge, surf._Q_fn, tol)
+            end
+        end
+    else 
+        pts_ = []
+        dfs_ = []
+        dls_ = []
+
+        for i = 0:2
+            i1 = i+1
+            i2 = (i+1)%3+1
+
+            if vals[i1] * vals[i2] < 0
+                pc, dfc, dlc = find_zeros(ps[i1], ps[i2], 
+                                          fs[i1], fs[i2], 
+                                          surf._Q_fn)
+                push!(pts_, pc)
+                push!(dfs_, dfc)
+                push!(dls_, dlc)
+            elseif vals[i1] == 0 
+                push!(pts_, ps[i1])
+                push!(dfs_, fs[i2] - fs[i1])
+                push!(dls_, ps[i2] - ps[i1])
+            end
+        end
+
+        if length(pts_) == 2
+            edge =  Edge(pts_[1], pts_[2])
+            is_subsample = level_set_is_subsample(edge, surf._Q_fn, tol)
+            if pts_[2] == pts_[1]
+                e = nothing
+            else
+                du = pts_[2] - pts_[1]
+                du = du/norm(du)
+                grad1 = abs(dfs_[1]/(dls_[1].x * du.y - dls_[1].y * du.x))
+                grad2 = abs(dfs_[2]/(dls_[2].x * du.y - dls_[2].y * du.x))
+                grad = [grad1, grad2]
+                e = (edge, grad)
+            end
+        end
     end
 
-    if val2 == 0
-    push!(pts, p2)
-    push!(df, df23)
-    push!(dl, dl23)
-    end
-
-    if val3 == 0
-    push!(pts, p3)
-    push!(df, df31)
-    push!(dl, dl31)
-    end
-
-    if val1 * val2 < 0
-        pc, dfc, dlc = find_zeros(p1, p2, f1, f2, surf._Q_fn)
-        push!(pts, pc)
-        push!(df, dfc)
-        push!(dl, dlc)
-    end
-
-    if val2 * val3 < 0
-        pc, dfc, dlc = find_zeros(p2, p3, f2, f3, surf._Q_fn)
-        push!(pts, pc)
-        push!(df, dfc)
-        push!(dl, dlc)
-    end
-
-    if val3 * val1 < 0
-        pc, dfc, dlc = find_zeros(p3, p1, f3, f1, surf._Q_fn)
-        push!(pts, pc)
-        push!(df, dfc)
-        push!(dl, dlc)
-    end
-
-    # p = val2/(val2 - val1)
-    # push!(pts, interp(p1, p2, p))
-    # push!(df, df12)
-    # push!(dl, dl12)
-    # end
-
-    # if val2 * val3 < 0
-    # p = val3/(val3 - val2)
-    # push!(pts, interp(p2, p3, p))
-    # push!(df, df23)
-    # push!(dl, dl23)
-    # end
-
-    # if val3 * val1 < 0
-    # p = val3/(val3 - val1)
-    # push!(pts, interp(p1, p3, p))
-    # push!(df, df31)
-    # push!(dl, dl31)
-    # end
-
-
-    if length(pts) == 2
-    edge =  Edge(pts[1], pts[2])
-    du::Vertex2D = pts[2] - pts[1]
-    du = du/norm(du)
-    grad1 = abs(df[1]/(dl[1].x * du.y - dl[1].y * du.x))
-    grad2 = abs(df[2]/(dl[2].x * du.y - dl[2].y * du.x))
-    grad = [grad1, grad2]
-    return edge, grad
-    else
-    return nothing 
-    end
+    return is_subsample, e
 end
 
 function level_set_is_subsample(edge::Edge, f::Any, err::Float64)
@@ -523,31 +409,33 @@ function level_set_is_subsample(edge::Edge, f::Any, err::Float64)
 
     dl = norm(edge.p1 - edge.p2)
 
-    return abs(f(p3.x, p3.y) - (f(p1.x, p1.y) + f(p2.x, p2.y))/2) > err * dl
+    return abs(f(p3) - (f(p1) + f(p2))/2) > err * dl
 end
 
-function level_set_subsample!(surf::Surface, c::Float64, depth::Int, err::Float64)::Vector{Int}
+function level_set_subsample!(surf::Surface, 
+                                c::Float64, 
+                                depth::Int, 
+                                tol::Float64)::Vector{Int}
     idxs = 1:length(surf._mesh._triangles) 
     idx_keep = []
     idx_new = []
     for n =1:depth - 1
         idx_new = []
         for i in idxs
-            e = level_set_helper(surf, c, i)
-            if !isnothing(e)
-                edge, grad = e 
-                
-                if level_set_is_subsample(edge, surf._Q_fn, err)
-                    push!(idx_new, i)
-                    subsample!(surf, i)
-                    L = length(surf._mesh._triangles)
-                    push!(idx_new, L-3)
-                    push!(idx_new, L-2)
-                    push!(idx_new, L-1)
-                else
-                    push!(idx_keep, i)
-                end
+            is_subsample, val = level_set_helper(surf, c, i, tol)
+
+            if is_subsample
+                push!(idx_new, i)
+                subsample!(surf, i)
+                L = length(surf._mesh._triangles)
+                push!(idx_new, L-3)
+                push!(idx_new, L-2)
+                push!(idx_new, L-1)
+            elseif !isnothing(val)
+                push!(idx_keep, i)
             end
+
+
         end
         idxs = idx_new
     end
@@ -556,27 +444,13 @@ function level_set_subsample!(surf::Surface, c::Float64, depth::Int, err::Float6
 end
 
 #TODO: remove redundancy since edge can be reuse
-#TODO: Beg when the line is almost parallel with the mesh
-# function level_set(surf::Surface2D, c::Float64, idxs::Vector{Int})::Vector{Edge}
-#     level_set_edges::Vector{Edge} = []
-        
-#     for i in idxs
-#         e = level_set_helper(surf, c, i)
-#         if !isnothing(e)
-#             push!(level_set_edges, edge)
-#         end
-#     end
-
-#     return level_set_edges
-# end
-
 #TODO: Perhaps could redefine contour?
-function level_set(surf::Surface, c::Float64, idxs::Vector{Int})::Tuple{Vector{Edge}, Vector{Vector{Float64}}}
+function level_set(surf::Surface, c::Float64, idxs::Vector{Int}, tol::Float64)::Tuple{Vector{Edge}, Vector{Vector{Float64}}}
     level_set_edges = []
     gradients = []
         
     for i in idxs
-        e::Union{Nothing, Tuple{Edge, Vector{Float64}}} = level_set_helper(surf, c, i)
+        is_subsmaple, e = level_set_helper(surf, c, i, tol)
         if !isnothing(e)
             edge, grad = e
             push!(level_set_edges, edge)
@@ -587,16 +461,14 @@ function level_set(surf::Surface, c::Float64, idxs::Vector{Int})::Tuple{Vector{E
     return level_set_edges, gradients
 end
 
-
-function level_set!(surf::Surface, c::Float64, depth::Int, err::Float64)
+function level_set!(surf::Surface, c::Float64, depth::Int, tol::Float64)
     
-    idxs = level_set_subsample!(surf, c, depth, err)
+    idxs = level_set_subsample!(surf, c, depth, tol)
 
-    level_set_edges = level_set(surf, c, idxs)
+    level_set_edges = level_set(surf, c, idxs, tol)
 
     return level_set_edges
 end
-
 
 function plot_level_set!(l_set::Vector{Edge})
     
@@ -607,57 +479,92 @@ function plot_level_set!(l_set::Vector{Edge})
     end
 end
 
-#TODO： adaptive integration here
-function integrate1D(e::Edge, grad::Vector{Float64}, f::Any)
-    ul, ur = e.p1, e.p2
-    dl = norm(ur - ul)
-    fl, fr = f(ul.x, ul.y), f(ur.x, ur.y)
-    gl = grad[1]
-    gr = grad[2]
-    uc = interp(ul, ur, 0.5)
-    gc = (gl + gr)/2
-    intl, intr = fl/gl, fr/gr
-    intc = f(uc.x, uc.y)/gc
-   
-    return (intl + 4 * intc + intr)/6 * dl
+function integrate1D_helper(f::Any, a::Float64, b::Float64)
+    fl = f(a)
+    fr = f(b)
+    fc = f((a + b)/2)
+    L = b-a
+    err = abs(fc - (fl + fr)/2.)
+
+    res = (fl + 4 * fc + fr)/6 * L
+
+    return res, err/L
 end
 
-function integrate1D(l_set::Vector{Edge}, grad::Vector{Vector{Float64}}, p::Any)
+function integrate1D(e::Edge, grad::Vector{Float64}, f::Any, depth::Int, tol::Float64)
+    vl, vr = e.p1, e.p2
+    L = norm(vr - vl)
+
+    x2p(p) = interp(vl, vr, 1 - p)
+
+    f_grad(x) = f(x2p(x))/(grad[1] + x/L * grad[2])
+
+    xl = [0.]
+    xr = [L]
+    acc = 0.
+
+    for n=1:depth 
+        xl_ = []
+        xr_ = []
+        for i = 1:length(xl)
+            res, err = integrate1D_helper(f_grad, xl[i], xr[i])
+
+            
+            if (err < tol || n == depth) && !isnan(res)
+                acc += res
+            else
+                push!(xl_, xl[i])
+                push!(xr_, (xl[i] + xr[i])/2.)
+                
+                push!(xl_, (xl[i] + xr[i])/2.)
+                push!(xr_, xr[i])
+            end
+        end
+
+        xl = xl_
+        xr = xr_
+    end
+
+    return acc
+end
+
+function integrate1D(l_set::Vector{Edge}, grad::Vector{Vector{Float64}}, p::Any, depth::Int, tol::Float64)
     acc = 0
+
     for i = 1:length(l_set)
-        acc += integrate1D(l_set[i], grad[i], p)
+        acc += integrate1D(l_set[i], grad[i], p, depth,  tol)
     end
     return acc
 end
 
 
-mesh = get_square_grid(1., 1., 37)
+mesh = get_square_grid(1., 1., 13)
 
-function p_fn(x, y)
+function p_fn(v)
     return 1.0
 end
 
-function q_fn(x, y) 
-    return 1e-3 - cos(2π * x)* cos(2π * y)
+function q_fn(v) 
+    return 0.2 - (v.x-0.5)^2 - (v.y-0.5)^2
 end
 
-function f_fn(x, y)
-    return q_fn(x, y)
+function f_fn(v)
+    return q_fn(v)
 end
 
 t0  = time()
 surf = Surface2D(mesh, q_fn)
+# println(level_set_helper(surf, 0., 1, ))
 println("time: ", time() - t0, " create mesh")
-level_set_edges, gradients = level_set!(surf, 0., 5, 1e-3)
-println("time: ", time() - t0, " level set")
-res = integrate1D(level_set_edges, gradients, p_fn)
+level_set_edges, gradients = level_set!(surf, 0., 4, 1e-6)
+println("time: ", time() - t0, " level set: ", length(level_set_edges))
+res = integrate1D(level_set_edges, gradients, p_fn, 5,  1e-9)
 println("time: ", time() - t0," integral: ", res)
 
 p = plot(surf)
 plot_level_set!(level_set_edges)
     
 Plots.display(p)
-
 
 println("done: ", time() - t0)
 
