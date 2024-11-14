@@ -540,85 +540,79 @@ end
 
 function mesh_test()
 
-mesh = get_square_grid(1., 1., 21)
+    mesh  = get_square_grid(1., 1., 21)
 
     function p_fn(v)
         return 1.0
     end
 
-function q_fn(v) 
-    return 1e-10 - cos.(2* π *  v.x) - cos.(2 * π * v.y)
-end
+    function q_fn(v) 
+        return 1. - cos.(2* π *  v.x) - cos.(2 * π * v.y)
+    end
 
     function f_fn(v)
         return q_fn(v)
     end
 
-t0  = time()
-surf = Surface2D(mesh, q_fn)
-# println(level_set_helper(surf, 0., 1, ))
-println("time: ", time() - t0, " create mesh")
+    t0  = time()
+    surf = Surface2D(mesh, q_fn)
+    # println(level_set_helper(surf, 0., 1, ))
+    println("time: ", time() - t0, " create mesh")
 
-level_set_edges1, gradients1 = level_set!(surf, -0.1, 4, 1e-6)
-println("time: ", time() - t0, " level set: ", length(level_set_edges1))
-res = integrate1D(level_set_edges1, gradients1, p_fn, 4,  1e-10)
-println("time: ", time() - t0," integral: ", res)
+    level_set_edges1, gradients1 = level_set!(surf, -0.1, 4, 1e-6)
+    println("time: ", time() - t0, " level set: ", length(level_set_edges1))
+    res = integrate1D(level_set_edges1, gradients1, p_fn, 4,  1e-10)
+    println("time: ", time() - t0," integral: ", res)
 
-level_set_edges2, gradients2 = level_set!(surf, 0.0, 4, 1e-6)
-println("time: ", time() - t0, " level set: ", length(level_set_edges))
-res = integrate1D(level_set_edges2, gradients2, p_fn, 4,  1e-10)
-println("time: ", time() - t0," integral: ", res)
+    level_set_edges2, gradients2 = level_set!(surf, 0.0, 4, 1e-6)
+    println("time: ", time() - t0, " level set: ", length(level_set_edges2))
+    res = integrate1D(level_set_edges2, gradients2, p_fn, 4,  1e-10)
+    println("time: ", time() - t0," integral: ", res)
 
-level_set_edges3, gradients3 = level_set!(surf, 0.1, 4, 1e-6)
-println("time: ", time() - t0, " level set: ", length(level_set_edges))
-res = integrate1D(level_set_edges3, gradients3, p_fn, 4,  1e-10)
-println("time: ", time() - t0," integral: ", res)
+    level_set_edges3, gradients3 = level_set!(surf, 0.1, 4, 1e-6)
+    println("time: ", time() - t0, " level set: ", length(level_set_edges3))
+    res = integrate1D(level_set_edges3, gradients3, p_fn, 4,  1e-10)
+    println("time: ", time() - t0," integral: ", res)
 
 
-
-p = plot(surf)
-plot_level_set!(level_set_edges1)
-plot_level_set!(level_set_edges2)
-plot_level_set!(level_set_edges3)
-    
-Plots.display(p)
+    p = plot(surf)
+    plot_level_set!(level_set_edges1)
+    plot_level_set!(level_set_edges2)
+    plot_level_set!(level_set_edges3)
+        
+    Plots.display(p)
 
     println("done: ", time() - t0)
 end
 
 function green_test()
-    mesh = get_square_grid(1., 1., 13)
+   
 
 
     function ε(k)
-        return cos(2pi*  k.x) + cos(2pi * k.y)
+        return  cos.(2* π *  k.x) + cos.(2 * π * k.y)
     end
     
     function q_fn(ω) 
         return k -> (ω - ε(k))
     end
 
-    function n(k)
-        e = ε(k)
-        if e > 0
-            return 0.
-        else
-            return 1.
-        end
+    function p_fn(k)
+        return 1.
     end
 
     t0  = time()
     Ns = []
 
-    ωs = range(1e-3,3.,30)
-
-    
+    ωs = range(1e-3, 3.,50)
 
     for ω in ωs
-        # println(ω)
-        surf = Surface2D(mesh, q_fn(ωs[1]))
-        level_set_edges, gradients = level_set!(surf, 0., 4, 1e-6)
-        res = integrate1D(level_set_edges, gradients, p_fn, 5,  1e-9)
+        mesh = get_square_grid(1., 1., 31)
+        
+        surf = Surface2D(mesh, q_fn(ω))
+        level_set_edges, gradients = level_set!(surf, 0., 6, 1e-6)
+        res = integrate1D(level_set_edges, gradients, p_fn, 6,  1e-6)
+        println("time: ", time() - t0, " ω: ", ω, " edges: ", length(level_set_edges), " res: ", res)
         push!(Ns, res)
     end
     println("time: ", time() - t0)
@@ -627,7 +621,7 @@ function green_test()
 end
 
 
-
+# mesh_test()
 green_test()
 
 
