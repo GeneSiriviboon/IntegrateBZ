@@ -76,29 +76,6 @@ function get_area(mesh::Mesh2D, i::Int)::Float64
     return area
 end
 
-struct Surface2DPQ <: Surface
-    _mesh::Mesh2D 
-    _P_values::Vector{Float64} #vertices
-    _Q_values::Vector{Float64} #vertices
-    _areas::Vector{Float64}    #triangle
-    _P_fn::Any
-    _Q_fn::Any
-
-    function Surface2DPQ(mesh::Mesh2D, p::Any, q::Any)
-        P_values = []
-        Q_values = []
-        for pos in mesh._vertices
-            Base.push!(P_values, p(pos.x, pos.y))
-            Base.push!(Q_values, q(pos.x, pos.y))
-        end
-        areas = []
-        for i = 1:length(mesh._triangles)
-            Base.push!(areas, get_area(mesh, i))
-        end
-        new(mesh, P_values, Q_values, areas, p_fn, q_fn)
-    end
-end
-
 function get_square_grid(X, Y, n, rand_pos = 0.0)::Mesh2D
     dx = X/n
     dy = Y/n
@@ -145,7 +122,6 @@ function get_square_grid(X, Y, n, rand_pos = 0.0)::Mesh2D
         end
     end
 
-    println("n: ", n, " len ", length(mesh._vertices))
     return mesh
 end
 
@@ -283,11 +259,7 @@ function find_zeros(p1::Vertex, p2::Vertex,
     end
     
     p = fr/(fr - fl)
-    if (p < 0.) || (p > 1.)
-        println("Nopr")
-    end
     pc =  interp(pl, pr, p)
-    # println("pc: ", pc)
     fc = f(pc)
 
     for i=1:steps
@@ -310,7 +282,17 @@ function find_zeros(p1::Vertex, p2::Vertex,
     return pc, (fr - fl), dl
 end
 
-#TODO: has to deals with the edge cases
+
+function is_singular(vals)
+    num_zeros_vert = Int(vals[1] == 0.) + Int(vals[2] == 0.) + Int(vals[3] == 0.)
+
+    num_zeros_edge = Int(vals[1] * vals[2] < 0.) + \
+                     Int(vals[2] * vals[3] < 0.) + \
+                     Int(vals[1] * vals[3] < 0.)
+
+    return num_zeros_edge + num_zeros_vert >= 2
+end
+
 function level_set_helper(surf::Surface2D, 
     c::Float64, 
     i::Int,
@@ -432,6 +414,8 @@ function level_set_subsample!(surf::Surface,
     return idxs
 end
 
+
+#TODO: separate the function into tagging is_subsample and tagging is_singular
 #TODO: remove redundancy since edge can be reuse
 #TODO: Perhaps could redefine contour?
 function level_set(surf::Surface, c::Float64, idxs::Vector{Int}, tol::Float64)::Tuple{Vector{Edge}, Vector{Vector{Float64}}}
@@ -526,6 +510,18 @@ function integrate1D(l_set::Vector{Edge}, grad::Vector{Vector{Float64}}, p::Any,
     return acc
 end
 
+
+function Dos(ω, ε_k, BZ, 
+                depth_LS  = 7,
+                depth_int = 7,
+                tol_LS = 1e-10, 
+                tol_int = 1e-10)
+    surf = Surface2D(BZ, k -> (ω - ε_k(k)))
+    level_set_edges, gradients = level_set!(surf, 0., depth_LS, tol_LS)
+    res = integrate1D(level_set_edges, gradients, k -> 1., depth_int,  tol_int)
+    return res 
+end
+
 function integrateP(surf::Surface2D, idx::Int, edge::Edge)
     """
     split triangle into: triangle + intermediate + quadulatereral
@@ -585,38 +581,28 @@ function mesh_test()
     println("done: ", time() - t0)
 end
 
+
+
 function green_test()
-   
 
-
-    function ε(k)
+    function ε_k(k)
         return  cos.(2* π *  k.x) + cos.(2 * π * k.y)
-    end
-    
-    function q_fn(ω) 
-        return k -> (ω - ε(k))
-    end
-
-    function p_fn(k)
-        return 1.
     end
 
     t0  = time()
     Ns = []
 
-    ωs = range(1e-3, 3.,50)
+    ωs = range(-3., 3.,50)
 
     for ω in ωs
-        mesh = get_square_grid(1., 1., 31)
-        
-        surf = Surface2D(mesh, q_fn(ω))
-        level_set_edges, gradients = level_set!(surf, 0., 6, 1e-6)
-        res = integrate1D(level_set_edges, gradients, p_fn, 6,  1e-6)
-        println("time: ", time() - t0, " ω: ", ω, " edges: ", length(level_set_edges), " res: ", res)
+        BZ = get_square_grid(1., 1., 51)
+        res = Dos(ω, ε_k, BZ)
         push!(Ns, res)
+        println("time: ", time() - t0, " dos: ", res)
+
     end
     println("time: ", time() - t0)
-    Plots.plot(ωs, Ns)
+    Plots.plot(ωs, Ns, seriestype=:scatter)
 
 end
 
