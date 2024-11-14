@@ -537,37 +537,94 @@ function integrate1D(l_set::Vector{Edge}, grad::Vector{Vector{Float64}}, p::Any,
     return acc
 end
 
+function integrateP(surf::Surface2D, idx::Int, edge::Edge)
+    """
+    split triangle into: triangle + intermediate + quadulatereral
 
-mesh = get_square_grid(1., 1., 13)
+    perform integrate on triangle and quadulatereral 
 
-function p_fn(v)
-    return 1.0
+    iteratively add point to the triangle and quadulateral 
+    """
 end
 
-function q_fn(v) 
-    return 0.2 - (v.x-0.5)^2 - (v.y-0.5)^2
+
+
+function mesh_test()
+
+    mesh = get_square_grid(1., 1., 13)
+
+    function p_fn(v)
+        return 1.0
+    end
+
+    function q_fn(v) 
+        return 0.2 - cos(2pi*  v.x) - cos(2pi * v.y)
+    end
+
+    function f_fn(v)
+        return q_fn(v)
+    end
+
+    t0  = time()
+    surf = Surface2D(mesh, q_fn)
+    # println(level_set_helper(surf, 0., 1, ))
+    println("time: ", time() - t0, " create mesh")
+    level_set_edges, gradients = level_set!(surf, 0., 4, 1e-6)
+    println("time: ", time() - t0, " level set: ", length(level_set_edges))
+    res = integrate1D(level_set_edges, gradients, p_fn, 5,  1e-9)
+    println("time: ", time() - t0," integral: ", res)
+
+    p = plot(surf)
+    plot_level_set!(level_set_edges)
+        
+    Plots.display(p)
+
+    println("done: ", time() - t0)
 end
 
-function f_fn(v)
-    return q_fn(v)
-end
+function green_test()
+    mesh = get_square_grid(1., 1., 13)
 
-t0  = time()
-surf = Surface2D(mesh, q_fn)
-# println(level_set_helper(surf, 0., 1, ))
-println("time: ", time() - t0, " create mesh")
-level_set_edges, gradients = level_set!(surf, 0., 4, 1e-6)
-println("time: ", time() - t0, " level set: ", length(level_set_edges))
-res = integrate1D(level_set_edges, gradients, p_fn, 5,  1e-9)
-println("time: ", time() - t0," integral: ", res)
 
-p = plot(surf)
-plot_level_set!(level_set_edges)
+    function ε(k)
+        return cos(2pi*  k.x) + cos(2pi * k.y)
+    end
     
-Plots.display(p)
+    function q_fn(ω) 
+        return k -> (ω - ε(k))
+    end
 
-println("done: ", time() - t0)
+    function n(k)
+        e = ε(k)
+        if e > 0
+            return 0.
+        else
+            return 1.
+        end
+    end
 
+    t0  = time()
+    Ns = []
+
+    ωs = range(1e-3,3.,30)
+
+    
+
+    for ω in ωs
+        # println(ω)
+        surf = Surface2D(mesh, q_fn(ωs[1]))
+        level_set_edges, gradients = level_set!(surf, 0., 4, 1e-6)
+        res = integrate1D(level_set_edges, gradients, p_fn, 5,  1e-9)
+        push!(Ns, res)
+    end
+    println("time: ", time() - t0)
+    Plots.plot(ωs, Ns)
+
+end
+
+
+
+green_test()
 
 
 
