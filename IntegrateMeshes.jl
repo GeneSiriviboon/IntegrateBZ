@@ -35,6 +35,7 @@ Base.:+(c::Float64, v2::Vertex2D) = Vertex2D(c + v2.x, c + v2.y)
 Base.:-(v1::Vertex2D, v2::Vertex2D) = Vertex2D(v1.x - v2.x, v1.y - v2.y)
 Base.:/(v::Vertex2D, c::Float64) = Vertex2D(v.x /c, v.y /c)
 Base.:*(c::Float64, v::Vertex2D) = Vertex2D(v.x *c, v.y*c)
+Base.:*(v::Vertex2D, c::Float64) = Vertex2D(v.x *c, v.y*c)
 
 struct Edge
     p1::Vertex
@@ -47,6 +48,10 @@ struct Mesh2D <: Mesh
     
     function Mesh2D()
         new([], [])
+    end 
+
+    function Mesh2D(_vertices, _triangles)
+        new(_vertices, _triangles)
     end 
 end
 
@@ -62,6 +67,12 @@ struct Surface2D<:Surface
         end
         new(mesh, values, f)
     end
+end
+
+
+
+function Base.copy(mesh::Mesh2D)
+    return Mesh2D(copy(mesh._vertices), copy(mesh._triangles))
 end
 
 function get_area(mesh::Mesh2D, i::Int)::Float64
@@ -131,6 +142,7 @@ function plot(mesh::Mesh2D)
     simple_mesh   = SimpleMesh(points, connec)
     Meshes.viz(simple_mesh, showsegments = true)
 end
+
 
 function plot(surf::Surface2D)
     points = [(p.x, p.y) for p in surf._mesh._vertices]
@@ -246,58 +258,21 @@ end
 norm(v::Vertex2D) = sqrt(v.x^2 + v.y^2)
 
 
-# function find_zeros(p1::Vertex, p2::Vertex, 
-#                     f1::Float64, f2::Float64,
-#                     f::Any, steps = 2)::Tuple{Vertex2D, Float64, Vertex2D}
-#     fl, fr = f1, f2
-#     pl, pr = p1, p2
-#     dl = pr - pl
-    
-#     if f1 > f2
-#         fl, fr  = f2, f1
-#         pl, pr = p2, p1
-#     end
-    
-#     p = fr/(fr - fl)
-#     pc =  interp(pl, pr, p)
-#     fc = f(pc)
-
-#     for i=1:steps
-#         if fc == 0
-#             return pc, (fr - fl), dl
-#         elseif fc < 0
-#             fl = fc
-#             pl = pc
-#             dl = p * dl
-#         else
-#             fr = fc
-#             pr = pc
-#             dl = (1 - p) * dl
-#         end
-#         p = fr/(fr - fl)
-#         pc =  interp(pl, pr, p)
-#         fc = f(pc)
-#     end
-#     # print("pc:", pc)
-#     return pc, (fr - fl), dl
-# end
-
-
-function is_singular(vals::Vector{Float64})
+function num_singular(vals::Vector{Float64})
     num_zeros_vert = Int(vals[1] == 0.) + Int(vals[2] == 0.) + Int(vals[3] == 0.)
 
     num_zeros_edge = Int(vals[1] * vals[2] < 0.) + 
                      Int(vals[2] * vals[3] < 0.) + 
                      Int(vals[1] * vals[3] < 0.)
 
-    return num_zeros_edge + num_zeros_vert >= 2
+    return num_zeros_edge + num_zeros_vert 
 end
 
-function is_singular(surf::Surface2D, c::Float64, i::Int, tol::Float64)
+function num_singular(surf::Surface2D, c::Float64, i::Int, tol::Float64)
     t = surf._mesh._triangles[i]
     fs  = [surf._values[t.v1], surf._values[t.v2], surf._values[t.v3]]
     vals = fs .- c 
-    return is_singular(vals)
+    return num_singular(vals) 
 end
 
 
@@ -314,7 +289,7 @@ function is_subsample(surf::Surface2D, c::Float64, i::Int, tol::Float64)
     
     err = abs.(vals_avg .- vals_c)
 
-    return any(err .> tol .* dl)
+    return any(err .> tol)
 end
 
 # function level_set_helper(surf::Surface2D, 
@@ -420,11 +395,7 @@ function level_set_subsample!(surf::Surface,
         for i in idxs
 
             sample = is_subsample(surf, c, i, tol)
-            sing =   is_singular(surf, c, i, tol)
-            # is_subsample, val = level_set_helper(surf, c, i, tol)
-            # if sing 
-            #     println("sing true ", "sample: " , sample)
-            # end
+            sing =   num_singular(surf, c, i, tol) > 0
 
             if sample && sing
                 push!(idx_new, i)
@@ -480,29 +451,34 @@ function level_set(surf::Surface, c::Float64, i::Int)
         end
     end
 
-    return Edge(zeros[1], zeros[2])
-end
+    edges::Vector{Edge} = []
 
+    L = length(zeros)
 
-#TODO: separate the function into tagging is_subsample and tagging is_singular
-#TODO: remove redundancy since edge can be reuse
-#TODO: Perhaps could redefine contour?
-function level_set(surf::Surface, c::Float64, idxs::Vector{Int}, tol::Float64)::Tuple{Vector{Edge}, Vector{Vector{Float64}}}
-    level_set_edges = []
-    gradients = []
-        
-    for i in idxs
-        sing = is_singular(surf, c, i, tol)
-        if sing  
-            grad = get_gradient(surf, i)
-            edge = level_set(surf, c, i)
-            # edge, grad = e
-            push!(level_set_edges, edge)
-            push!(gradients, [grad, grad])
+    
+    for i = 1: L
+        if i!=2 || L!=2 
+            push!(edges, Edge(zeros[i], zeros[i %L + 1]))
         end
     end
 
-    return level_set_edges, gradients
+    return edges
+end
+
+function level_set(surf::Surface, c::Float64, idxs::Vector{Int}, tol::Float64)::Vector{Edge}
+    level_set_edges = []
+        
+    for i in idxs
+        sing = num_singular(surf, c, i, tol) >= 2
+        if sing  
+            edges = level_set(surf, c, i)
+            for edge in edges
+                push!(level_set_edges, edge)
+            end
+        end
+    end
+
+    return level_set_edges
 end
 
 function level_set!(surf::Surface, c::Float64, depth::Int, tol::Float64)
@@ -532,26 +508,26 @@ function integrate1D_helper(f::Any, a::Float64, b::Float64)
 
     res = (fl + 4 * fc + fr)/6 * L
 
-    return res, err/L
+    return res, err
 end
 
-function integrate1D(e::Edge, grad::Vector{Float64}, f::Any, depth::Int, tol::Float64)
-    vl, vr = e.p1, e.p2
-    L = norm(vr - vl)
+function integrate1D(a::Float64, b::Float64, f_fn::Any, depth::Int, tol::Float64)
 
-    x2p(p) = interp(vl, vr, 1 - p)
 
-    f_grad(x) = f(x2p(x))/(grad[1] + x/L * grad[2])
+    # x2p(p) = interp(vl, vr, 1 - p)
+    # integrand(p) = f_fn(x2p(p))
 
-    xl = [0.]
-    xr = [L]
+    xl = [a]
+    xr = [b]
     acc = 0.
 
     for n=1:depth 
         xl_ = []
         xr_ = []
-        for i = 1:length(xl)
-            res, err = integrate1D_helper(f_grad, xl[i], xr[i])
+        Len = length(xl)
+        
+        for i = 1:Len
+            res, err = integrate1D_helper(f_fn, xl[i], xr[i])
 
             
             if (err < tol || n == depth) && !isnan(res)
@@ -572,6 +548,29 @@ function integrate1D(e::Edge, grad::Vector{Float64}, f::Any, depth::Int, tol::Fl
     return acc
 end
 
+function integrate1D(e::Edge, f_fn::Any, depth::Int, tol::Float64)
+    vl, vr = e.p1, e.p2
+    L = norm(vr - vl)
+
+    x2p(p) = interp(vl, vr, 1 - p)
+    integrand(p) = f_fn(x2p(p))
+    return L * integrate1D(0., 1., integrand, depth, tol)
+end
+
+function integrate1D(e::Edge, grad::Vector{Float64}, f::Any, depth::Int, tol::Float64)
+    vl, vr = e.p1, e.p2
+    
+    L = norm(vr - vl)
+
+    x2p(p) = interp(vl, vr, 1 - p)
+
+    f_grad(x) = f(x2p(x))/(grad[1] + x/L * grad[2])
+
+
+    return integrate1D(e, f_grad, depth, tol)
+end
+
+
 function integrate1D(l_set::Vector{Edge}, grad::Vector{Vector{Float64}}, p::Any, depth::Int, tol::Float64)
     acc = 0
 
@@ -582,39 +581,225 @@ function integrate1D(l_set::Vector{Edge}, grad::Vector{Vector{Float64}}, p::Any,
 end
 
 
-function Dos(ω, ε_k, BZ, 
+function Dos(ω::Float64, ε_k::Any, BZ::Mesh2D, 
                 depth_LS  = 7,
                 depth_int = 7,
                 tol_LS = 1e-10, 
                 tol_int = 1e-10)
-    surf = Surface2D(BZ, k -> (ω - ε_k(k)))
-    level_set_edges, gradients = level_set!(surf, 0., depth_LS, tol_LS)
-    res = integrate1D(level_set_edges, gradients, k -> 1., depth_int,  tol_int)
+    return  integrate_delta(k -> 1., k -> (ω - ε_k(k)), BZ, depth_LS, depth_int, tol_LS, tol_int)
+end
+
+function integrate_delta(p_fn::Any, q_fn::Any, domain::Mesh2D, 
+                        depth_LS  = 6,
+                        depth_int = 6,
+                        tol_LS = 1e-9, 
+                        tol_int = 1e-9)
+
+    surf = Surface2D(copy(domain), q_fn)
+    level_set_subsample!(surf, 0., depth_LS, tol_LS)
+    L = length(surf._mesh._triangles)
+    res = 0.
+    for i = 1:L 
+        if num_singular(surf, 0., i, tol_LS) >= 2
+            grad = get_gradient(surf, i)
+            edges = level_set(surf, 0., i)
+            for edge in edges
+                res += integrate1D(edge, p_fn, depth_int, tol_int)/grad
+            end
+        end     
+    end
     return res 
 end
 
-function integrateP(surf::Surface2D, idx::Int, edge::Edge)
-    """
-    split triangle into: triangle + intermediate + quadulatereral
+function integrate_im(p_fn::Any, q_fn::Any, Domain::Mesh2D, 
+    depth_LS  = 7,
+    depth_int = 7,
+    tol_LS = 1e-10, 
+    tol_int = 1e-10)
+    return -π * integrate_delta(p_fn, q_fn, Domain, depth_LS, depth_int, tol_LS, tol_int)
+end
 
-    perform integrate on triangle and quadulatereral 
+function integrate_non_sing_helper(f1::Float64, 
+                                   f2::Float64, 
+                                   f3::Float64, 
+                                   fc::Float64, 
+                                   area::Float64)
+        
+        err = abs(fc - (f1 + f2 + f3)/3.)
+        res = area * ((f1 + f2 + f3) * 2. / 9. + fc/3.)
+        # println(err)
+        return res, err
+end
 
-    iteratively add point to the triangle and quadulateral 
-    """
+# #TODO: Implement this
+function integrate_sing(surf_Q::Surface2D, 
+    p_fn::Any, 
+    i::Int, 
+    depth::Int, 
+    tol::Float64)
+
+    return 0.
+end
+
+
+function integrate_sing(surf_Q::Surface2D, 
+    p_fn::Any, 
+    idxs::Vector{Int}, 
+    depth::Int, 
+    tol::Float64)
+
+    acc = 0.
+    for i in idxs
+        acc += integrate_sing(surf_Q, p_fn, i, depth, tol)
+    end
+    return  acc
+end
+
+# #TODO: singular in the definition of level set is different from inetgration as one vertices could ruin the integral
+
+function integrate_non_sing(surf_Q::Surface2D, 
+                            p_fn::Any, 
+                            idxs::Vector{Int}, 
+                            depth::Int, 
+                            tol::Float64)
+    mesh_Q = surf_Q._mesh
+    
+    p_vals = p_fn.(mesh_Q._vertices)
+
+    acc = 0
+
+    for n = 1:depth
+        idx_new = []
+        for j in idxs
+
+            t = mesh_Q._triangles[j]
+            
+            x1, x2, x3 = mesh_Q._vertices[t.v1], 
+                         mesh_Q._vertices[t.v2], 
+                         mesh_Q._vertices[t.v3]
+
+            p1, p2, p3 = p_vals[t.v1], p_vals[t.v2], p_vals[t.v3]
+            
+            q1, q2, q3 = surf_Q._values[t.v1],
+                         surf_Q._values[t.v2],
+                         surf_Q._values[t.v3]
+
+            f1, f2, f3 = p1/q1, p2/q2, p3/q3
+            xc = (x1 + x2 + x3)/3.
+            fc = p_fn(xc)/surf_Q._Q_fn(xc)
+
+            area = get_area(mesh_Q, j)
+            
+            res, err = integrate_non_sing_helper(f1, f2, f3, fc, area)
+            if n == depth || err < tol
+                acc += res
+            else
+                Lt = length(surf_Q._mesh._triangles)
+                Lv = length(surf_Q._mesh._vertices)
+                subsample!(surf_Q, j)
+                push!(idx_new, j)
+                push!(idx_new, Lt - 3)
+                push!(idx_new, Lt - 2)
+                push!(idx_new, Lt - 1)
+                push!(p_vals, p_fn(mesh_Q._vertices[Lv - 3]))
+                push!(p_vals, p_fn(mesh_Q._vertices[Lv - 2]))
+                push!(p_vals, p_fn(mesh_Q._vertices[Lv - 1]))
+            end
+        end
+        idxs = idx_new
+    end
+
+    return acc
+end
+
+function integrate_re(p_fn::Any, q_fn::Any, domain::Mesh2D, 
+    depth_LS  = 4,
+    depth_int = 4,
+    tol_LS = 1e-6, 
+    tol_int = 1e-6,
+    lnc_min = -6.,
+    dx = 1,
+    tol_inf = 1e-7)
+    
+    surf = Surface2D(domain, q_fn)
+    lnc_max = log(maximum(abs.(surf._values)))
+
+    # println("lnc_max", lnc_max)
+    # print(ln_cmax)
+
+    function integrand(lnc)
+        c = exp(lnc)
+        int_pos = integrate_delta(p_fn, x->(q_fn(x) - c), 
+                                  domain, 
+                                  depth_LS, 
+                                  depth_int, 
+                                  tol_LS, 
+                                  tol_int)
+        int_neg = integrate_delta(p_fn, x->(q_fn(x) + c), 
+                                  domain, 
+                                  depth_LS, 
+                                  depth_int, 
+                                  tol_LS, 
+                                  tol_int)
+        return int_pos - int_neg
+    end
+
+    acc = 0.
+    threshold = -1.
+    for lnc = lnc_max:-dx:lnc_min
+        
+        res = integrate1D(lnc, lnc + dx, integrand, depth_int, tol_int)    
+        acc += res
+        if abs(res)/max(abs(acc), 1e-10) < tol_inf && lnc < threshold
+            break
+        end
+    end
+
+    return acc
+
+    # surf = Surface2D(Domain, q_fn)
+    # level_set_subsample!(surf, 0., depth_LS, tol_LS)
+
+    # L = length(surf._mesh._triangles)
+    # res = 0.
+
+    # idxs_sing::Vector{Int} = []
+    # idxs_non_sing::Vector{Int} = []
+    # for i = 1:L 
+    #     sing = num_singular(surf, 0., i, tol_LS) > 0
+    #     if sing
+    #         push!(idxs_sing, i)
+    #     else
+    #         push!(idxs_non_sing, i)
+    #     end
+    # end 
+    # sing = [is_singular(surf, 0., i, tol_LS) for i = 1:L]
+    
+    # idxs_sing = (1:L)[sing]
+    # idxs_non_sing = (1:L)[.!sing]
+
+    # println(length(idxs_sing))
+    # println(length(idxs_non_sing))
+
+    
+    # res += integrate_sing(surf, p_fn, idxs_sing, depth_int, tol_int)
+    # res += integrate_non_sing(surf, p_fn, idxs_non_sing, depth_int, tol_int)
+
+    # p = plot(surf)
+    # display(p)
+    # return res 
 end
 
 
 
 function mesh_test()
 
-    mesh  = get_square_grid(1., 1., 31)
-
     function p_fn(v)
         return 1.0
     end
 
     function q_fn(v) 
-        return 0.1 - cos.(2* π *  v.x) - cos.(2 * π * v.y)
+        return  cos.(2* π *  v.x) + cos.(2 * π * v.y)
     end
 
     function f_fn(v)
@@ -622,37 +807,38 @@ function mesh_test()
     end
 
     t0  = time()
+    mesh  = get_square_grid(1., 1., 31)
     surf = Surface2D(mesh, q_fn)
-    # println(level_set_helper(surf, 0., 1, ))
-    println("time: ", time() - t0, " create mesh")
-
-    level_set_edges1, gradients1 = level_set!(surf, 0.0, 4, 1e-10)
-    println("time: ", time() - t0, " level set: ", length(level_set_edges1))
-    res = integrate1D(level_set_edges1, gradients1, p_fn, 4,  1e-10)
-    println("time: ", time() - t0," integral: ", res)
-
-    # level_set_edges2, gradients2 = level_set!(surf, -0.1, 4, 1e-6)
-    # println("time: ", time() - t0, " level set: ", length(level_set_edges2))
-    # res = integrate1D(level_set_edges2, gradients2, p_fn, 4,  1e-10)
-    # println("time: ", time() - t0," integral: ", res)
-
-    # level_set_edges3, gradients3 = level_set!(surf, 0.1, 4, 1e-6)
-    # println("time: ", time() - t0, " level set: ", length(level_set_edges3))
-    # res = integrate1D(level_set_edges3, gradients3, p_fn, 4,  1e-10)
-    # println("time: ", time() - t0," integral: ", res)
-
-
+    # println("time: ", time() - t0, " create mesh")
     p = plot(surf)
-    plot_level_set!(level_set_edges1)
-    # plot_level_set!(level_set_edges2)
-    # plot_level_set!(level_set_edges3)
-        
-    Plots.display(p)
 
-    println("done: ", time() - t0)
+    cmax = max(maximum(surf._values), 0)
+    cmin = min(minimum(surf._values), 0)
+
+    if cmax > 0
+        for lnc = -6.:1.: log(cmax)+1.
+            mesh  = get_square_grid(1., 1., 57)
+            surf = Surface2D(mesh, q_fn)
+            level_set_edges = level_set!(surf, exp(lnc), 4, 1e-4)
+            plot_level_set!(level_set_edges)
+            println("time: ", time() - t0," lnc: ", lnc, " level set: ", length(level_set_edges))
+        end
+    end
+
+
+    if cmin < 0 
+        for lnc = -6.:1.: log(-cmin)+1.
+            mesh  = get_square_grid(1., 1., 57)
+            surf = Surface2D(mesh, q_fn)
+            level_set_edges = level_set!(surf, -exp(lnc), 4, 1e-4)
+            plot_level_set!(level_set_edges)
+            println("time: ", time() - t0," lnc: ", lnc, " level set: ", length(level_set_edges))
+        end
+    end
+    Plots.display(p)
 end
 
-
+    
 
 function green_test()
 
@@ -662,24 +848,34 @@ function green_test()
 
     t0  = time()
     Ns = []
+    Rs = []
 
-    ωs = range(-3., 3.,50)
+    ωs = range(-3., 3.,30)
 
     for ω in ωs
         BZ = get_square_grid(1., 1., 51)
-        res = Dos(ω, ε_k, BZ)
-        push!(Ns, res)
-        println("time: ", time() - t0, " dos: ", res)
-
+        dos = Dos(ω, ε_k, BZ)
+        real = integrate_re(k->1., k->(ω - ε_k(k)), BZ)
+        push!(Ns, dos)
+        push!(Rs, real)
+        println("time: ", time() - t0, " dos: ", dos, " real: ", real)
     end
+
     println("time: ", time() - t0)
     Plots.plot(ωs, Ns, seriestype=:scatter)
-
+    Plots.plot!(ωs, Rs, seriestype=:scatter)
+    Plots.plot(ωs, [Rs, Ns], 
+                    title="Green function", 
+                    label=["Re" "Im"],
+                    seriestype=:scatter,
+                    )
+    Plots.xlabel!("ω")
+    Plots.ylabel!("G(ω)")
 end
-
 
 mesh_test()
 # green_test()
+
 
 
 
