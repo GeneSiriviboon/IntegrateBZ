@@ -842,14 +842,14 @@ function compare_green()
                                        depth_int = 7,
                                        tol_LS = 1e-10, 
                                        tol_int = 1e-10)
-    print("Level Set time: ", time() - t0, " dos: ", dos_LS)
+    println("Level Set time: ", time() - t0, " dos: ", dos_LS)
     t0 = time()
     dos_quad = calculate_dos_quad(ω, ε_k; 
-                                    η = 1e-5, 
-                                    atol = 1e-6, 
-                                    maxevals = 10000)
-    print("quad time: ", time() - t0, " dos: ", dos_quad)
-    print("differences: ", abs(dos_LS - dos_quad))
+                                    η = 1e-8, 
+                                    atol = 1e-9, 
+                                    maxevals = 1000000)
+    println("quad time: ", time() - t0, " dos: ", dos_quad)
+    println("differences: ", abs(dos_LS - dos_quad))
 end
 
 compare_green()
