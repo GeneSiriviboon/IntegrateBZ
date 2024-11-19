@@ -2,9 +2,8 @@
 using Plots;
 using Meshes;
 using StatsBase;
-# using MeshViz;
 import CairoMakie as Mke;
-# using PlotlyJS
+using MultiQuad;
 
 """
 Data Structure 
@@ -292,97 +291,6 @@ function is_subsample(surf::Surface2D, c::Float64, i::Int, tol::Float64)
     return any(err .> tol)
 end
 
-# function level_set_helper(surf::Surface2D, 
-#     c::Float64, 
-#     i::Int,
-#     tol::Float64)::Tuple{Bool, Union{Nothing, Tuple{Edge, Vector{Float64}}}}
-    
-#     t = surf._mesh._triangles[i]
-
-#     fs  = [surf._values[t.v1], surf._values[t.v2], surf._values[t.v3]]
-#     ps  = [surf._mesh._vertices[t.v1], surf._mesh._vertices[t.v2], surf._mesh._vertices[t.v3]]
-#     vals = [fs[1] - c,  fs[2] - c,  fs[3] - c]
-
-#     e = nothing 
-#     sample = false
-
-#     num_zeros = Int(vals[1] == 0) + Int(vals[2] == 0) + Int(vals[3] == 0)
-
-#     if  num_zeros == 3
-#         sample = true
-#         edge = Edge(ps[1], ps[2])
-#         grad = [0.0, 0.0]
-#         e = edge, grad
-#     elseif  num_zeros == 2
-#         for i = 0:2
-#             i1 = i+1
-#             i2 = (i+1)%3+1
-#             i3 = (i+2)%3+1
-#             if vals[i1] == 0 && vals[i2] == 0
-#                 edge = Edge(ps[i1], ps[i2])
-#                 df = fs[i1] - fs[i3]
-#                 dl = ps[i2] - ps[i3]
-#                 du = ps[i2] - ps[i2]
-#                 grad1 = abs(df/(dl.x * du.y - dl.y * du.x))
-                
-#                 grad = [grad1, grad1]
-                
-#                 e = (edge, grad)
-#                 sample = level_set_is_subsample(edge, surf._Q_fn, tol)
-#             end
-#         end
-#     else 
-#         pts_ = []
-#         dfs_ = []
-#         dls_ = []
-
-#         for i = 0:2
-#             i1 = i+1
-#             i2 = (i+1)%3+1
-
-#             if vals[i1] * vals[i2] < 0
-#                 pc, dfc, dlc = find_zeros(ps[i1], ps[i2], 
-#                                             vals[i1], vals[i2],
-#                                           x -> surf._Q_fn(x) - c)
-#                 push!(pts_, pc)
-#                 push!(dfs_, dfc)
-#                 push!(dls_, dlc)
-#             elseif vals[i1] == 0 
-#                 push!(pts_, ps[i1])
-#                 push!(dfs_, fs[i2] - fs[i1])
-#                 push!(dls_, ps[i2] - ps[i1])
-#             end
-#         end
-
-#         if length(pts_) == 2
-#             edge =  Edge(pts_[1], pts_[2])
-#             sample = level_set_is_subsample(edge, surf._Q_fn, tol)
-#             if pts_[2] == pts_[1]
-#                 e = nothing
-#             else
-#                 du = pts_[2] - pts_[1]
-#                 du = du/norm(du)
-#                 grad1 = abs(dfs_[1]/(dls_[1].x * du.y - dls_[1].y * du.x))
-#                 grad2 = abs(dfs_[2]/(dls_[2].x * du.y - dls_[2].y * du.x))
-#                 grad = [grad1, grad2]
-#                 # println(grad)
-#                 e = (edge, grad)
-#             end
-#         end
-#     end
-
-#     return sample, e
-# end
-
-# function level_set_is_subsample(edge::Edge, f::Any, err::Float64)
-#     p1, p2 = edge.p1, edge.p2 
-#     p3 = (edge.p1 + edge.p2)/2.
-
-#     dl = norm(edge.p1 - edge.p2)
-
-#     return abs(f(p3) - (f(p1) + f(p2))/2) > err * dl
-# end
-
 function level_set_subsample!(surf::Surface, 
                                 c::Float64, 
                                 depth::Int, 
@@ -581,15 +489,15 @@ function integrate1D(l_set::Vector{Edge}, grad::Vector{Vector{Float64}}, p::Any,
 end
 
 
-function Dos(ω::Float64, ε_k::Any, BZ::Mesh2D, 
+function calculate_dos(ω::Float64, ε_k::Any, BZ::Mesh2D; 
                 depth_LS  = 7,
                 depth_int = 7,
                 tol_LS = 1e-10, 
                 tol_int = 1e-10)
-    return  integrate_delta(k -> 1., k -> (ω - ε_k(k)), BZ, depth_LS, depth_int, tol_LS, tol_int)
+    return  integrate_delta(k -> 1., k -> (ω - ε_k(k)), BZ; depth_LS, depth_int, tol_LS, tol_int)
 end
 
-function integrate_delta(p_fn::Any, q_fn::Any, domain::Mesh2D, 
+function integrate_delta(p_fn::Any, q_fn::Any, domain::Mesh2D; 
                         depth_LS  = 6,
                         depth_int = 6,
                         tol_LS = 1e-9, 
@@ -611,12 +519,12 @@ function integrate_delta(p_fn::Any, q_fn::Any, domain::Mesh2D,
     return res 
 end
 
-function integrate_im(p_fn::Any, q_fn::Any, Domain::Mesh2D, 
+function integrate_im(p_fn::Any, q_fn::Any, Domain::Mesh2D; 
     depth_LS  = 7,
     depth_int = 7,
     tol_LS = 1e-10, 
     tol_int = 1e-10)
-    return -π * integrate_delta(p_fn, q_fn, Domain, depth_LS, depth_int, tol_LS, tol_int)
+    return -π * integrate_delta(p_fn, q_fn, Domain; depth_LS, depth_int, tol_LS, tol_int)
 end
 
 function integrate_non_sing_helper(f1::Float64, 
@@ -656,7 +564,6 @@ function integrate_sing(surf_Q::Surface2D,
 end
 
 # #TODO: singular in the definition of level set is different from inetgration as one vertices could ruin the integral
-
 function integrate_non_sing(surf_Q::Surface2D, 
                             p_fn::Any, 
                             idxs::Vector{Int}, 
@@ -756,43 +663,10 @@ function integrate_re(p_fn::Any, q_fn::Any, domain::Mesh2D,
     end
 
     return acc
-
-    # surf = Surface2D(Domain, q_fn)
-    # level_set_subsample!(surf, 0., depth_LS, tol_LS)
-
-    # L = length(surf._mesh._triangles)
-    # res = 0.
-
-    # idxs_sing::Vector{Int} = []
-    # idxs_non_sing::Vector{Int} = []
-    # for i = 1:L 
-    #     sing = num_singular(surf, 0., i, tol_LS) > 0
-    #     if sing
-    #         push!(idxs_sing, i)
-    #     else
-    #         push!(idxs_non_sing, i)
-    #     end
-    # end 
-    # sing = [is_singular(surf, 0., i, tol_LS) for i = 1:L]
-    
-    # idxs_sing = (1:L)[sing]
-    # idxs_non_sing = (1:L)[.!sing]
-
-    # println(length(idxs_sing))
-    # println(length(idxs_non_sing))
-
-    
-    # res += integrate_sing(surf, p_fn, idxs_sing, depth_int, tol_int)
-    # res += integrate_non_sing(surf, p_fn, idxs_non_sing, depth_int, tol_int)
-
-    # p = plot(surf)
-    # display(p)
-    # return res 
 end
 
 
-
-function mesh_test()
+function mesh_test1()
 
     function p_fn(v)
         return 1.0
@@ -800,6 +674,54 @@ function mesh_test()
 
     function q_fn(v) 
         return  cos.(2* π *  v.x) + cos.(2 * π * v.y)
+    end
+
+    function f_fn(v)
+        return q_fn(v)
+    end
+
+    t0  = time()
+    mesh  = get_square_grid(1., 1., 31)
+    surf = Surface2D(mesh, q_fn)
+    # println("time: ", time() - t0, " create mesh")
+    p = plot(surf)
+
+    cmax = max(maximum(surf._values), 0)
+    cmin = min(minimum(surf._values), 0)
+
+    if cmax > 0
+        for lnc = -6.:1.: log(cmax)+1.
+            mesh  = get_square_grid(1., 1., 57)
+            surf = Surface2D(mesh, q_fn)
+            level_set_edges = level_set!(surf, exp(lnc), 4, 1e-4)
+            plot_level_set!(level_set_edges)
+            println("time: ", time() - t0," lnc: ", lnc, " level set: ", length(level_set_edges))
+        end
+    end
+
+
+    if cmin < 0 
+        for lnc = -6.:1.: log(-cmin)+1.
+            mesh  = get_square_grid(1., 1., 57)
+            surf = Surface2D(mesh, q_fn)
+            level_set_edges = level_set!(surf, -exp(lnc), 4, 1e-4)
+            plot_level_set!(level_set_edges)
+            println("time: ", time() - t0," lnc: ", lnc, " level set: ", length(level_set_edges))
+        end
+    end
+    Plots.display(p)
+end
+
+
+function mesh_test2()
+    function p_fn(v)
+        return 1.0
+    end
+
+    function q_fn(v) 
+        k1 = (v.x * 2 ./sqrt(3.) + v.y / sqrt(3)) 
+        k2 = v.y 
+        return  sqrt(1 + 4* cos(π*sqrt(3) * k1) * cos(π * k2) + 4* cos(π* k2)^2)
     end
 
     function f_fn(v)
@@ -854,28 +776,80 @@ function green_test()
 
     for ω in ωs
         BZ = get_square_grid(1., 1., 51)
-        dos = Dos(ω, ε_k, BZ)
-        real = integrate_re(k->1., k->(ω - ε_k(k)), BZ)
-        push!(Ns, dos)
+        dos = calculate_dos(ω, ε_k, BZ)
         push!(Rs, real)
-        println("time: ", time() - t0, " dos: ", dos, " real: ", real)
+        println("time: ", time() - t0, " dos: ", dos)
     end
 
     println("time: ", time() - t0)
     Plots.plot(ωs, Ns, seriestype=:scatter)
-    Plots.plot!(ωs, Rs, seriestype=:scatter)
-    Plots.plot(ωs, [Rs, Ns], 
-                    title="Green function", 
-                    label=["Re" "Im"],
-                    seriestype=:scatter,
-                    )
-    Plots.xlabel!("ω")
     Plots.ylabel!("G(ω)")
 end
 
-mesh_test()
-# green_test()
+
+function green_test2()
+
+    function ε_k(v)
+        k1 = (v.x * 2 ./sqrt(3.) + v.y / sqrt(3)) 
+        k2 = v.y 
+        return  sqrt(1 + 4* cos(π*sqrt(3) * k1) * cos(π * k2) + 4* cos(π* k2)^2)
+    end
+
+    t0  = time()
+    Ns = []
+
+    ωs = range(-5., 5.,100)
+
+    for ω in ωs
+        BZ = get_square_grid(1., 1., 51)
+        dos = calculate_dos(ω, ε_k, BZ)
+        dos += calculate_dos(ω, k -> -ε_k(k), BZ)
+        push!(Ns, dos)
+        println("time: ", time() - t0, " dos: ", dos)
+    end
+
+    println("time: ", time() - t0)
+    Plots.plot(ωs, Ns, seriestype = :scatter)
+    Plots.xlabel!("ω")
+    Plots.ylabel!("Im G(ω)")
+end
+
+# mesh_test2()
+# green_test2()
+
+"""
+Baseline
+"""
+
+function calculate_dos_quad(ω, ε_k; η = 1e-5, atol = 1e-6, maxevals = 10000)
+    integral, error = dblquad((kx, ky) -> η/(η^2 + (ω - ε_k(Vertex2D(kx, ky)))^2.), 0., 1., 0., 1., atol=atol, maxevals = maxevals)
+    return integral * 1/π
+end
 
 
+function compare_green()
+    function ε_k(v)
+        k1 = (v.x * 2 ./sqrt(3.) + v.y / sqrt(3)) 
+        k2 = v.y 
+        return  sqrt(1 + 4* cos(π*sqrt(3) * k1) * cos(π * k2) + 4* cos(π* k2)^2)
+    end
 
+    ω = 2.
 
+    BZ = get_square_grid(1., 1., 51)
+    t0 = time()
+    dos_LS = calculate_dos(ω, ε_k, BZ; depth_LS  = 7,
+                                       depth_int = 7,
+                                       tol_LS = 1e-10, 
+                                       tol_int = 1e-10)
+    print("Level Set time: ", time() - t0, " dos: ", dos_LS)
+    t0 = time()
+    dos_quad = calculate_dos_quad(ω, ε_k; 
+                                    η = 1e-5, 
+                                    atol = 1e-6, 
+                                    maxevals = 10000)
+    print("quad time: ", time() - t0, " dos: ", dos_quad)
+    print("differences: ", abs(dos_LS - dos_quad))
+end
+
+compare_green()
