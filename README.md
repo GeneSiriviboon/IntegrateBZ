@@ -1,17 +1,17 @@
-# IntegrateBZ
+# LevelSetIntegrate
 
 This code is written by Phum (Gene) Siriviboon.
 
 ## Problem Statement
 Calculate the integration of the form
-$$I = \int_V d\bm{x} \frac{p(\bm{x})}{q(\bm{x}) + i 0^+}.$$
+$$I = \int_V d{x} \frac{p({x})}{q({x}) + i 0^+}.$$
 Assuming that the singularity on the integrand only emerges due to zeros of $q(x)$
 
 ## Introduction
 
 using an identity $\frac{1}{x+i0^+} = \mathcal{P} \frac{1}{x} - i \pi \delta(x)$, we can see that 
-$${\rm Re} \, I = \mathcal{P} \int_V  d\bm{x} \, \frac{p(\bm{x})}{q(\bm{x})},$$
-$${\rm Im} \, I =  - \pi \int_V  d\bm{x} \, \delta(q(\bm{x})) p(\bm{x}).$$
+$${\rm Re} \, I = \mathcal{P} \int_V  d{x} \, \frac{p({x})}{q({x})},$$
+$${\rm Im} \, I =  - \pi \int_V  d{x} \, \delta(q({x})) p({x}).$$
 
 which can also be rewitten as 
 
@@ -20,7 +20,7 @@ $${\rm Re} \, I = \mathcal{P} \int \frac{dc}{c} \int_{q(x(t)) = c} dx(t)  \, \fr
 $${\rm Im} \, I =  - \pi \int_{q(x(t)) = 0} dx(t)  \, \frac{p(x(t))}{|\nabla q(x(t))|}.$$
 
 
-We can see that for both the real and imaginary part, the integrand is concentrated near $q(\bm{x}) = 0$ which would result in major contribution of the integral. Here, we propose the following scheme.
+We can see that for both the real and imaginary part, the integrand is concentrated near $q({x}) = 0$ which would result in major contribution of the integral. Here, we propose the following scheme.
 
 1. sample meshes to represent the domain of integral
 2. separate the mesh into two type: mesh without singularity and mesh with singularity
@@ -30,10 +30,10 @@ We can see that for both the real and imaginary part, the integrand is concentra
 Here we outline the algorithm for the initial mesh subsampling
 
 1. Initiate a mesh e.g. $2\times N\times N$  triangular grid
-2. Calculate $q(\bm{x})$ for every vertices of the meshes
+2. Calculate $q({x})$ for every vertices of the meshes
 3. Label every triangles with subsample tags
 4. Iterate through the faces with following
-- For triangle $\bm{x}\bm{y}\bm{z}$ calculate $q_x = q(\bm{x}), q_y =  q(\bm{y}), q_z =  q(\bm{z})$
+- For triangle ${x}{y}{z}$ calculate $q_x = q({x}), q_y =  q({y}), q_z =  q({z})$
 - If three of the function are zero label the face with subsample tag
 - If two of $q_i$ are zero or $q_i q_j < 0$, tag the triangle with singularity tag and test the following
     - consider edge i, j: find midpoint k if $|q_k - (q_i + q_j)/2| > l_{ij} \varepsilon$ where $l_{ij}$ are the distance between i andj, label the triangle with subsample tag
