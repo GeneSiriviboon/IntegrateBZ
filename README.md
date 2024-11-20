@@ -41,24 +41,8 @@ Here we outline the algorithm for the initial mesh subsampling
 5. Subsample on all the triangles with the subsample tag. 
 6. Repeat 3 and 4 for $n$ times or until run out of subsampled tag
 
-## Integration in mesh without singularity
+## Integration 
 
-### Imaginary Part
-
-1. return 0
-
-### Real Part
-
-1. set accumulator to 0
-2. Label every triangle with subsampled tag
-3. For every triangle xyz with subsampled tag
-    - calculate $p_x/q_x$, $p_y/q_y$, $p_z/q_z$
-    - calculate midpoint $cm = (x + y + z)/3$
-    - if $|p_{cm}/ q_{cm} - (p_x/q_x + p_y/q_y + p_z/q_z)/3| < a_{xyz} \varepsilon$ where $a_{xyz}$ is the area of the triangle add to the accumulator with $(p_x/q_x + p_y/q_y + p_z/q_z)/3 * a_{xyz}$ and remove the subsample tag
-    - else tag the triangle with subsample tag
-4. repeat 3. for $n$ times or no more tags 
-
-## Integration in mesh with singularity
 
 ### Imaginary Part
 
@@ -71,9 +55,35 @@ Here we outline the algorithm for the initial mesh subsampling
 ### Real parts
 
 1. For each triangle, find $q(x) = c$ using k-step newton-raphson method => (i, j)
-2. Approximate $|\nabla q(x)|$ with finite difference method and interpolation
+2. Approximate $|\nabla q(x)|$ for each faces with finite difference method 
 3. Integrate $p(x)/|\nabla q(x)|$ along ij using adaptive trapeziod rule and set to $F(c)$
 4. Integrate $\int d \ln(c) \, F(c)$ using adaptive trapeziodal rule
+
+## Results and Bachmarking
+
+### Level set i.e. Fermi Level
+
+*Square Lattice*
+![image](fig/band_square_lattice.png)
+
+*Graphene Band (with linear transformation)*
+![image](fig/graphene_band.png)
+
+
+### Density of state
+
+*DOS of square lattice*
+![image](fig/Green_fn_square_lattice.svg)
+
+*graphene DOS computed using exact, level set method, and quadruture method*
+
+![image](fig/graphene_dos.svg)
+
+
+### Benchmarking
+
+Here we compute the density of state of graphene band at $\omega = 2.0$ and compare the result with the 2d quadruture rule using error as a function of runtime as metric. 
+![image](fig/benchmark_runtime_err.svg)
 
 
 

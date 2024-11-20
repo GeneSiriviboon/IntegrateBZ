@@ -4,6 +4,7 @@ using Meshes;
 using StatsBase;
 import CairoMakie as Mke;
 using SpecialFunctions;
+using BenchmarkTools;
 using MultiQuad;
 
 """
@@ -638,13 +639,13 @@ function integrate_re(p_fn::Any, q_fn::Any, domain::Mesh2D,
     function integrand(lnc)
         c = exp(lnc)
         int_pos = integrate_delta(p_fn, x->(q_fn(x) - c), 
-                                  domain, 
+                                  domain; 
                                   depth_LS, 
                                   depth_int, 
                                   tol_LS, 
                                   tol_int)
         int_neg = integrate_delta(p_fn, x->(q_fn(x) + c), 
-                                  domain, 
+                                  domain; 
                                   depth_LS, 
                                   depth_int, 
                                   tol_LS, 
@@ -837,9 +838,9 @@ function green_test2()
     end
 
     println("time: ", time() - t0)
-    Plots.plot(ωs, [Ns_exact], label = "exact")
-    Plots.plot!(ωs, [Ns], label = "numerical", seriestype = :scatter)
-    Plots.plot!(ωs, [Ns_quad], label = "quad", seriestype = :scatter)
+    Plots.plot(ωs, [Ns_exact], label = "exact", color = :black)
+    Plots.plot!(ωs, [Ns_quad], label = "quad", seriestype = :scatter, markersize = 5)
+    Plots.plot!(ωs, [Ns], label = "level set", seriestype = :scatter, color = :blue4, markersize = 2)
     # Plots.plot(ωs, [log.(abs.(Ns_exact .- Ns)), log.(abs.(Ns_exact .- Ns_quad))], label = ["Level set" "Quad"])
     Plots.xlabel!("ω")
     Plots.ylabel!("Im G(ω)")
@@ -881,7 +882,92 @@ function compare_green()
     println("differences: ", abs(dos_LS - dos_quad))
 end
 
+function test_runtime_quad(η)
+    function ε_k(v)
+        k1 = (v.x * 2 ./sqrt(3.) + v.y / sqrt(3)) 
+        k2 = v.y 
+        return  sqrt(1 + 4* cos(π*sqrt(3) * k1) * cos(π * k2) + 4* cos(π* k2)^2)
+    end
+
+    ω = 2.
+
+    BZ = get_square_grid(1., 1., 51)
+    dos_exact = dos_graphene_exact(ω)
+    errs = []
+    times = []
+
+    for maxevals in [10000, 100000, 1000000, 10000000, 100000000]
+        println("maxevals", maxevals)
+        dos_LS = calculate_dos_quad(ω, ε_k; 
+                                    η = η, 
+                                    atol = 1e-10, 
+                                    maxevals = maxevals)
+ 
+                          
+        runtime =  (@belapsed calculate_dos_quad($ω, $ε_k; 
+                                                    η = $η, 
+                                                    atol = 1e-10, 
+                                                    maxevals = $maxevals))
+        err = abs(dos_exact - dos_LS)
+        push!(times, runtime)
+        push!(errs, err)
+    end
+    Plots.plot!(times, errs ,xaxis=:log, yaxis=:log, label =  "quad η = $η")
+    Plots.xaxis!("runtime(s)")
+    Plots.yaxis!("error")
+end
 
 
+function test_runtime_LS()
+    function ε_k(v)
+        k1 = (v.x * 2 ./sqrt(3.) + v.y / sqrt(3)) 
+        k2 = v.y 
+        return  sqrt(1 + 4* cos(π*sqrt(3) * k1) * cos(π * k2) + 4* cos(π* k2)^2)
+    end
+
+    ω = 2.
+
+    BZ = get_square_grid(1., 1., 51)
+    dos_exact = dos_graphene_exact(ω)
+    errs = []
+    times = []
+    for depth = 0:12
+        println("depth", depth)
+        dos_LS = calculate_dos(ω, ε_k, BZ; depth_LS  = depth,
+        depth_int = depth,
+        tol_LS = 1e-10, 
+        tol_int = 1e-10)
+                          
+        runtime =  (@belapsed calculate_dos($ω, $ε_k, $BZ; depth_LS  = $depth,
+                                            depth_int = $depth,
+                                            tol_LS = 1e-10, 
+                                            tol_int = 1e-10))
+        err = abs(dos_exact - dos_LS)
+        push!(times, runtime)
+        push!(errs, err)
+    end
+    p = Plots.plot(times, errs ,xaxis=:log, yaxis=:log, label = "level set", color = :blue4)
+    Plots.xaxis!("runtime(s)")
+    Plots.yaxis!("error")
+    return p
+end
+
+function test_runtime()
+    default(palette = palette(:PiYG_10))
 # compare_green()
+# green_test2()
+p = test_runtime_LS()
+for η in [1e-5, 1e-4, 1e-3, 1e-2]
+    println(η)
+    test_runtime_quad(η)
+end
+
+display(p)
+end
+
+# mesh_test2()
 green_test2()
+
+
+
+
