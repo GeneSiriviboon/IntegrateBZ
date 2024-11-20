@@ -3,6 +3,7 @@ using Plots;
 using Meshes;
 using StatsBase;
 import CairoMakie as Mke;
+using SpecialFunctions;
 using MultiQuad;
 
 """
@@ -787,6 +788,19 @@ function green_test()
 end
 
 
+function dos_graphene_exact(E)
+    F = 1. /16. * (abs(E) + 1)^3 * (3 - abs(E))
+    K(m) = ellipk(m)
+
+    if abs(E) <= 1
+        return abs(E)/π^2 * 1/sqrt(F) * K(abs(E)/F)
+    elseif abs(E) <= 3
+        return abs(E)/π^2 * 1/sqrt(abs(E)) * K(F/abs(E))
+    else 
+        return 0.0
+    end
+end
+
 function green_test2()
 
     function ε_k(v)
@@ -797,6 +811,8 @@ function green_test2()
 
     t0  = time()
     Ns = []
+    Ns_exact = []
+    Ns_quad =[]
 
     ωs = range(-5., 5.,100)
 
@@ -804,18 +820,30 @@ function green_test2()
         BZ = get_square_grid(1., 1., 51)
         dos = calculate_dos(ω, ε_k, BZ)
         dos += calculate_dos(ω, k -> -ε_k(k), BZ)
+        dos_exact = dos_graphene_exact(ω)
+        dos_quad = calculate_dos_quad(ω, ε_k; 
+                                        η = 0.0001, 
+                                        atol = 1e-10, 
+                                        maxevals = 10000000)
+        dos_quad += calculate_dos_quad(ω, k -> -ε_k(k); 
+                                        η = 0.0001, 
+                                        atol = 1e-10, 
+                                        maxevals = 10000000)
+        println(dos_exact)
         push!(Ns, dos)
+        push!(Ns_exact, dos_exact)
+        push!(Ns_quad, dos_quad)
         println("time: ", time() - t0, " dos: ", dos)
     end
 
     println("time: ", time() - t0)
-    Plots.plot(ωs, Ns, seriestype = :scatter)
+    Plots.plot(ωs, [Ns_exact], label = "exact")
+    Plots.plot!(ωs, [Ns], label = "numerical", seriestype = :scatter)
+    Plots.plot!(ωs, [Ns_quad], label = "quad", seriestype = :scatter)
+    # Plots.plot(ωs, [log.(abs.(Ns_exact .- Ns)), log.(abs.(Ns_exact .- Ns_quad))], label = ["Level set" "Quad"])
     Plots.xlabel!("ω")
     Plots.ylabel!("Im G(ω)")
 end
-
-# mesh_test2()
-# green_test2()
 
 """
 Baseline
@@ -838,18 +866,22 @@ function compare_green()
 
     BZ = get_square_grid(1., 1., 51)
     t0 = time()
-    dos_LS = calculate_dos(ω, ε_k, BZ; depth_LS  = 7,
-                                       depth_int = 7,
+    dos_LS = calculate_dos(ω, ε_k, BZ; depth_LS  = 10,
+                                       depth_int = 10,
                                        tol_LS = 1e-10, 
                                        tol_int = 1e-10)
     println("Level Set time: ", time() - t0, " dos: ", dos_LS)
     t0 = time()
     dos_quad = calculate_dos_quad(ω, ε_k; 
-                                    η = 1e-8, 
-                                    atol = 1e-9, 
-                                    maxevals = 1000000)
+                                    η = 0.00001, 
+                                    atol = 1e-10, 
+                                    maxevals = 10000000)
+
     println("quad time: ", time() - t0, " dos: ", dos_quad)
     println("differences: ", abs(dos_LS - dos_quad))
 end
 
-compare_green()
+
+
+# compare_green()
+green_test2()
