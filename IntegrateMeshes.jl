@@ -31,12 +31,12 @@ struct Vertex2D <: Vertex
     y::Float64
 end
 
-Base.:+(v1::Vertex2D, v2::Vertex2D) = Vertex2D(v1.x + v2.x, v1.y + v2.y)
-Base.:+(c::Float64, v2::Vertex2D) = Vertex2D(c + v2.x, c + v2.y)
-Base.:-(v1::Vertex2D, v2::Vertex2D) = Vertex2D(v1.x - v2.x, v1.y - v2.y)
-Base.:/(v::Vertex2D, c::Float64) = Vertex2D(v.x /c, v.y /c)
-Base.:*(c::Float64, v::Vertex2D) = Vertex2D(v.x *c, v.y*c)
-Base.:*(v::Vertex2D, c::Float64) = Vertex2D(v.x *c, v.y*c)
+Base.:+(v1::Vertex2D, v2::Vertex2D)::Vertex2D = Vertex2D(v1.x + v2.x, v1.y + v2.y)
+Base.:+(c::Float64, v2::Vertex2D)::Vertex2D = Vertex2D(c + v2.x, c + v2.y)
+Base.:-(v1::Vertex2D, v2::Vertex2D)::Vertex2D = Vertex2D(v1.x - v2.x, v1.y - v2.y)
+Base.:/(v::Vertex2D, c::Float64)::Vertex2D = Vertex2D(v.x /c, v.y /c)
+Base.:*(c::Float64, v::Vertex2D)::Vertex2D = Vertex2D(v.x *c, v.y*c)
+Base.:*(v::Vertex2D, c::Float64)::Vertex2D = Vertex2D(v.x *c, v.y*c)
 
 struct Edge
     p1::Vertex
@@ -364,16 +364,15 @@ function level_set(surf::Surface, c::Float64, i::Int)
     edges::Vector{Edge} = []
 
     L = length(zeros)
-
     
     for i = 1: L
         if i!=2 || L!=2 
             push!(edges, Edge(zeros[i], zeros[i %L + 1]))
         end
     end
-
     return edges
 end
+
 
 function level_set(surf::Surface, c::Float64, idxs::Vector{Int}, tol::Float64)::Vector{Edge}
     level_set_edges = []
@@ -491,14 +490,6 @@ function integrate1D(l_set::Vector{Edge}, grad::Vector{Vector{Float64}}, p::Any,
 end
 
 
-function calculate_dos(ω::Float64, ε_k::Any, BZ::Mesh2D; 
-                depth_LS  = 7,
-                depth_int = 7,
-                tol_LS = 1e-10, 
-                tol_int = 1e-10)
-    return  integrate_delta(k -> 1., k -> (ω - ε_k(k)), BZ; depth_LS, depth_int, tol_LS, tol_int)
-end
-
 function integrate_delta(p_fn::Any, q_fn::Any, domain::Mesh2D; 
                         depth_LS  = 6,
                         depth_int = 6,
@@ -541,31 +532,6 @@ function integrate_non_sing_helper(f1::Float64,
         return res, err
 end
 
-# #TODO: Implement this
-function integrate_sing(surf_Q::Surface2D, 
-    p_fn::Any, 
-    i::Int, 
-    depth::Int, 
-    tol::Float64)
-
-    return 0.
-end
-
-
-function integrate_sing(surf_Q::Surface2D, 
-    p_fn::Any, 
-    idxs::Vector{Int}, 
-    depth::Int, 
-    tol::Float64)
-
-    acc = 0.
-    for i in idxs
-        acc += integrate_sing(surf_Q, p_fn, i, depth, tol)
-    end
-    return  acc
-end
-
-# #TODO: singular in the definition of level set is different from inetgration as one vertices could ruin the integral
 function integrate_non_sing(surf_Q::Surface2D, 
                             p_fn::Any, 
                             idxs::Vector{Int}, 
@@ -621,7 +587,7 @@ function integrate_non_sing(surf_Q::Surface2D,
     return acc
 end
 
-function integrate_re(p_fn::Any, q_fn::Any, domain::Mesh2D, 
+function integrate_re(p_fn::Any, q_fn::Any, domain::Mesh2D; 
     depth_LS  = 4,
     depth_int = 4,
     tol_LS = 1e-6, 
@@ -631,10 +597,8 @@ function integrate_re(p_fn::Any, q_fn::Any, domain::Mesh2D,
     tol_inf = 1e-7)
     
     surf = Surface2D(domain, q_fn)
-    lnc_max = log(maximum(abs.(surf._values)))
+    lnc_max = log(maximum(abs.(surf._values))) + dx
 
-    # println("lnc_max", lnc_max)
-    # print(ln_cmax)
 
     function integrand(lnc)
         c = exp(lnc)
@@ -667,6 +631,17 @@ function integrate_re(p_fn::Any, q_fn::Any, domain::Mesh2D,
     return acc
 end
 
+function calculate_dos(ω::Float64, ε_k::Any, BZ::Mesh2D; 
+    depth_LS  = 7,
+    depth_int = 7,
+    tol_LS = 1e-10, 
+    tol_int = 1e-10)::Float64 
+    return  integrate_delta(k -> 1., k -> (ω - ε_k(k)), BZ; depth_LS, depth_int, tol_LS, tol_int)
+end
+
+# function calculate_dos_θ()
+
+# end
 
 function mesh_test1()
 
@@ -772,14 +747,38 @@ function green_test()
 
     t0  = time()
     Ns = []
-    Rs = []
 
     ωs = range(-3., 3.,30)
 
     for ω in ωs
         BZ = get_square_grid(1., 1., 51)
         dos = calculate_dos(ω, ε_k, BZ)
-        push!(Rs, real)
+        push!(Ns, dos)
+        println("time: ", time() - t0, " dos: ", dos)
+    end
+
+    println("time: ", time() - t0)
+    Plots.plot(ωs, Ns, seriestype=:scatter)
+    Plots.ylabel!("G(ω)")
+end
+
+
+function green_test_eta()
+
+    function ε_k(k)
+        return  cos.(2* π *  k.x) + cos.(2 * π * k.y)
+    end
+
+    t0  = time()
+    Ns = []
+
+    ωs = range(0., 3.,30)
+    η = 1e-5
+
+    for ω in ωs
+        BZ = get_square_grid(1., 1., 51)
+        dos = η * calculate_dos(ω, k -> ε_k(k)^2 + η^2, BZ)
+        push!(Ns, dos)
         println("time: ", time() - t0, " dos: ", dos)
     end
 
@@ -801,6 +800,8 @@ function dos_graphene_exact(E)
         return 0.0
     end
 end
+
+
 
 function green_test2()
 
@@ -953,20 +954,19 @@ function test_runtime_LS()
 end
 
 function test_runtime()
-    default(palette = palette(:PiYG_10))
-# compare_green()
-# green_test2()
-p = test_runtime_LS()
-for η in [1e-5, 1e-4, 1e-3, 1e-2]
-    println(η)
-    test_runtime_quad(η)
+    p = test_runtime_LS()
+    for η in [1e-5, 1e-4, 1e-3, 1e-2]
+        println(η)
+        test_runtime_quad(η)
+    end
+
+    display(p)
 end
 
-display(p)
-end
-
+default(palette = palette(:PiYG_10))
 # mesh_test2()
-green_test2()
+# green_test()
+green_test_eta()
 
 
 

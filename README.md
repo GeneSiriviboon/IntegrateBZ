@@ -22,10 +22,6 @@ $${\rm Im} \, I =  - \pi \int_{q(x(t)) = 0} dx(t)  \, \frac{p(x(t))}{|\nabla q(x
 
 We can see that for both the real and imaginary part, the integrand is concentrated near $q({x}) = 0$ which would result in major contribution of the integral. Here, we propose the following scheme.
 
-1. sample meshes to represent the domain of integral
-2. separate the mesh into two type: mesh without singularity and mesh with singularity
-3. Integrate both mesh separtely and combine the result
-
 ## Initial mesh subsampling [Getting Level set]
 Here we outline the algorithm for the initial mesh subsampling
 
@@ -47,43 +43,49 @@ Here we outline the algorithm for the initial mesh subsampling
 ### Imaginary Part
 
 
-1. For each triangle, find zero using k-step newton-raphson method => (i, j)
+1. For each triangle, find zero using k-step newton-raphson method and return edge(s) ij
 2. Approximate $|\nabla q(x)|$ with finite difference method and linear interpolation
 3. Integrate $p(x)/|\nabla q(x)|$ along ij using adaptive trapeziod rule
 
 
 ### Real parts
 
-1. For each triangle, find $q(x) = c$ using k-step newton-raphson method => (i, j)
+1. For each triangle, find $q(x) = c$ using k-step newton-raphson method and return edge(s) ij
 2. Approximate $|\nabla q(x)|$ for each faces with finite difference method 
 3. Integrate $p(x)/|\nabla q(x)|$ along ij using adaptive trapeziod rule and set to $F(c)$
 4. Integrate $\int d \ln(c) \, F(c)$ using adaptive trapeziodal rule
+
+<div style="page-break-after: always;"></div>
 
 ## Results and Bachmarking
 
 ### Level set i.e. Fermi Level
 
 *Square Lattice*
-![image](fig/band_square_lattice.png)
+<img width = 60% src = "fig/band_square_lattice.png">
+
 
 *Graphene Band (with linear transformation)*
-![image](fig/graphene_band.png)
+<img width = 60% src = "fig/graphene_band.png">
 
+<div style="page-break-after: always;"></div>
 
 ### Density of state
 
 *DOS of square lattice*
-![image](fig/Green_fn_square_lattice.svg)
+<img width = 60% src = "fig/Green_fn_square_lattice.svg">
+
 
 *graphene DOS computed using exact, level set method, and quadruture method*
 
-![image](fig/graphene_dos.svg)
+<img width = 60% src = "fig/graphene_dos.svg">
 
+<div style="page-break-after: always;"></div>
 
 ### Benchmarking
 
 Here we compute the density of state of graphene band at $\omega = 2.0$ and compare the result with the 2d quadruture rule using error as a function of runtime as metric. 
-![image](fig/benchmark_runtime_err.svg)
+<img width = 60% src = "fig/benchmark_runtime_err.svg">
 
 
 
