@@ -31,12 +31,25 @@ struct Vertex2D <: Vertex
     y::Float64
 end
 
+struct Vertex2DComplex <: Vertex
+    x::ComplexF64
+    y::ComplexF64
+end
+
+
 Base.:+(v1::Vertex2D, v2::Vertex2D)::Vertex2D = Vertex2D(v1.x + v2.x, v1.y + v2.y)
 Base.:+(c::Float64, v2::Vertex2D)::Vertex2D = Vertex2D(c + v2.x, c + v2.y)
 Base.:-(v1::Vertex2D, v2::Vertex2D)::Vertex2D = Vertex2D(v1.x - v2.x, v1.y - v2.y)
 Base.:/(v::Vertex2D, c::Float64)::Vertex2D = Vertex2D(v.x /c, v.y /c)
 Base.:*(c::Float64, v::Vertex2D)::Vertex2D = Vertex2D(v.x *c, v.y*c)
 Base.:*(v::Vertex2D, c::Float64)::Vertex2D = Vertex2D(v.x *c, v.y*c)
+
+Base.:+(v1::Vertex2DComplex, v2::ComplexF64)::Vertex2DComplex = Vertex2DComplex(v1.x + v2.x, v1.y + v2.y)
+Base.:+(c::ComplexF64, v2::Vertex2DComplex)::Vertex2DComplex = Vertex2DComplex(c + v2.x, c + v2.y)
+Base.:-(v1::Vertex2DComplex, v2::Vertex2DComplex)::Vertex2DComplex = Vertex2DComplex(v1.x - v2.x, v1.y - v2.y)
+Base.:/(v::Vertex2DComplex, c::ComplexF64)::Vertex2DComplex = Vertex2DComplex(v.x /c, v.y /c)
+Base.:*(c::ComplexF64, v::Vertex2DComplex)::Vertex2DComplex = Vertex2DComplex(v.x *c, v.y*c)
+Base.:*(v::Vertex2DComplex, c::ComplexF64)::Vertex2DComplex = Vertex2DComplex(v.x *c, v.y*c)
 
 struct Edge
     p1::Vertex
@@ -255,8 +268,13 @@ function interp(u::Vertex2D, v::Vertex2D, p::Float64)
     return Vertex2D(p * u.x + (1-p) * v.x, p * u.y + (1-p) * v.y)
 end
 
+function interp(u::Vertex2DComplex, v::Vertex2DComplex, p::Float64)
+    return Vertex2DComplex(p * u.x + (1-p) * v.x, p * u.y + (1-p) * v.y)
+end
+
 
 norm(v::Vertex2D) = sqrt(v.x^2 + v.y^2)
+norm(v::Vertex2DComplex) = sqrt(abs(v.x)^2 + abs(v.y)^2)
 
 
 function num_singular(vals::Vector{Float64})
@@ -325,6 +343,8 @@ function level_set_subsample!(surf::Surface,
     return idxs
 end
 
+
+
 function get_gradient(surf::Surface, i::Int)
     t = surf._mesh._triangles[i]
     fs  = [surf._values[t.v1], surf._values[t.v2], surf._values[t.v3]]
@@ -390,13 +410,31 @@ function level_set(surf::Surface, c::Float64, idxs::Vector{Int}, tol::Float64)::
     return level_set_edges
 end
 
-function level_set!(surf::Surface, c::Float64, depth::Int, tol::Float64)
+function level_set!(surf::Surface, c::Float64, depth::Int, tol::Float64)::Vector{Edge}
     
     idxs = level_set_subsample!(surf, c, depth, tol)
 
     level_set_edges = level_set(surf, c, idxs, tol)
 
     return level_set_edges
+end
+
+conj(v::Vertex2DComplex) = Vertex2DComplex(Base.conj(v.x), Base.conj(v.y))
+
+#TODO: Write early stopping
+function find_zeros(p::Vertex2D, f::Any, grad::Any, η::Any ,depth::Int)::Vertex2DComplex
+    # p1 s.t. find f(p1) + iη(p1) = 0.0 + 0.0im
+    p1 = Vertex2DComplex(ComplexF64(p.x), ComplexF64(p.y))
+    # println("p1: ", p1, " f + i eta: ", f(p1) + 1.0im * η(p1))
+    for i = 1:depth
+        
+        grad_vec = grad(p1) 
+        # println("grad: ", grad_vec)
+        p1 -= (f(p1) + 1.0im *η(p1))/norm(grad_vec)^2 * conj(grad_vec) 
+        # println("p1: ", p1, " f + i eta: ", f(p1) + 1.0im * η(p1))
+    end
+
+    return p1
 end
 
 function plot_level_set!(l_set::Vector{Edge})
@@ -409,9 +447,11 @@ function plot_level_set!(l_set::Vector{Edge})
 end
 
 function integrate1D_helper(f::Any, a::Float64, b::Float64)
+    # println(a, " ", b)
     fl = f(a)
+    # println("f(a)")
     fr = f(b)
-    fc = f((a + b)/2)
+    fc = f((a + b)/2.)
     L = b-a
     err = abs(fc - (fl + fr)/2.)
 
@@ -420,11 +460,9 @@ function integrate1D_helper(f::Any, a::Float64, b::Float64)
     return res, err
 end
 
-function integrate1D(a::Float64, b::Float64, f_fn::Any, depth::Int, tol::Float64)
-
-
-    # x2p(p) = interp(vl, vr, 1 - p)
-    # integrand(p) = f_fn(x2p(p))
+function integrate1D(a::Float64, b::Float64, 
+                     f_fn::Any, depth::Int, tol::Float64)
+   
 
     xl = [a]
     xr = [b]
@@ -436,8 +474,10 @@ function integrate1D(a::Float64, b::Float64, f_fn::Any, depth::Int, tol::Float64
         Len = length(xl)
         
         for i = 1:Len
-            res, err = integrate1D_helper(f_fn, xl[i], xr[i])
 
+            # println("xlxr:", xl[i], " ", xr[i])
+            res, err = integrate1D_helper(f_fn, xl[i], xr[i])
+            # println("res:", res)
             
             if (err < tol || n == depth) && !isnan(res)
                 acc += res
@@ -457,24 +497,38 @@ function integrate1D(a::Float64, b::Float64, f_fn::Any, depth::Int, tol::Float64
     return acc
 end
 
+
 function integrate1D(e::Edge, f_fn::Any, depth::Int, tol::Float64)
     vl, vr = e.p1, e.p2
     L = norm(vr - vl)
 
-    x2p(p) = interp(vl, vr, 1 - p)
-    integrand(p) = f_fn(x2p(p))
+    x2p(p::Float64) = interp(vl, vr, 1 - p)
+    integrand(p::Float64) = f_fn(x2p(p))
     return L * integrate1D(0., 1., integrand, depth, tol)
 end
 
-function integrate1D(e::Edge, grad::Vector{Float64}, f::Any, depth::Int, tol::Float64)
-    vl, vr = e.p1, e.p2
+# function integrate1D(e::Edge, grad::Vector{Float64}, f::Any, depth::Int, tol::Float64)
+#     vl, vr = e.p1, e.p2
     
-    L = norm(vr - vl)
+#     L = norm(vr - vl)
 
-    x2p(p) = interp(vl, vr, 1 - p)
+#     x2p(p) = interp(vl, vr, 1 - p)
 
-    f_grad(x) = f(x2p(x))/(grad[1] + x/L * grad[2])
+#     f_grad(x) = f(x2p(x))/(grad[1] + x/L * grad[2])
 
+#     return integrate1D(e, f_grad, depth, tol)
+# end
+
+function integrate1D(e::Edge, grad::Any, f::Any, depth::Int, tol::Float64)
+    # println("This should be called")
+    vl, vr = e.p1, e.p2
+
+
+    # x2p(x::Float64)::Vertex = interp(vl, vr, 1.0 - x)
+
+    norm_analytic(g::Vertex)::Union{ComplexF64, Float64} = sqrt((g.x)^2 + (g.y)^2) 
+
+    f_grad(x) = f(x)/norm_analytic(grad(x))
 
     return integrate1D(e, f_grad, depth, tol)
 end
@@ -500,10 +554,13 @@ function integrate_delta(p_fn::Any, q_fn::Any, domain::Mesh2D;
     level_set_subsample!(surf, 0., depth_LS, tol_LS)
     L = length(surf._mesh._triangles)
     res = 0.
+
+    # looping for each triangle
     for i = 1:L 
+        # check for isoline
         if num_singular(surf, 0., i, tol_LS) >= 2
-            grad = get_gradient(surf, i)
-            edges = level_set(surf, 0., i)
+            grad = get_gradient(surf, i)   # get gradient for the triangle
+            edges = level_set(surf, 0., i) # get the edge
             for edge in edges
                 res += integrate1D(edge, p_fn, depth_int, tol_int)/grad
             end
@@ -528,7 +585,6 @@ function integrate_non_sing_helper(f1::Float64,
         
         err = abs(fc - (f1 + f2 + f3)/3.)
         res = area * ((f1 + f2 + f3) * 2. / 9. + fc/3.)
-        # println(err)
         return res, err
 end
 
@@ -639,9 +695,7 @@ function calculate_dos(ω::Float64, ε_k::Any, BZ::Mesh2D;
     return  integrate_delta(k -> 1., k -> (ω - ε_k(k)), BZ; depth_LS, depth_int, tol_LS, tol_int)
 end
 
-# function calculate_dos_θ()
 
-# end
 
 function mesh_test1()
 
@@ -660,7 +714,7 @@ function mesh_test1()
     t0  = time()
     mesh  = get_square_grid(1., 1., 31)
     surf = Surface2D(mesh, q_fn)
-    # println("time: ", time() - t0, " create mesh")
+
     p = plot(surf)
 
     cmax = max(maximum(surf._values), 0)
@@ -953,6 +1007,100 @@ function test_runtime_LS()
     return p
 end
 
+
+function green_test_complex()
+    function ε_k(k)
+        return  cos.(2* π * k.x) + cos.(2 * π * k.y) 
+    end
+
+    function v_k(k)
+        return  Vertex2DComplex(- 2π * sin(2* π *  k.x), - 2π * sin(2* π *  k.y))
+    end
+    p = Plots.plot()
+    ωs =  -3.001:0.3:3.
+
+    for eta in [0., 0.5, 1.0, 2.0]
+        res = []
+        for ω in ωs
+            println("eta: ", eta, " omega: ", ω)
+            mesh  = get_square_grid(1., 1., 57)
+            surf = Surface2D(mesh, k -> (ε_k(k) - ω))
+            level_set_edges = level_set!(surf, 0.0, 10, 1e-4)
+            η(k) = eta 
+            depth = 3
+            tol = 1e-5
+
+            acc = 0
+            for e in level_set_edges
+                p1, p2 = e.p1, e.p2
+                p1_new = find_zeros(p1, k ->  ε_k(k) - ω, v_k, η, 30)
+                p2_new = find_zeros(p2, k ->  ε_k(k) - ω, v_k, η, 30)
+                edge_new = Edge(p1_new, p2_new)
+                acc += integrate1D(edge_new, k-> 1. /sqrt((v_k(k).x^2 + v_k(k).y^2)), depth, tol)
+            end
+
+            push!(res, real(acc))
+        end
+        Plots.plot!(ωs, res, label = string(eta), seriestype = :scatter)
+    end
+
+    display(p)
+
+end
+
+#TODO: edge case where there is no level set in real 
+#   plane but there are some in the complex plane
+function green_test_complex2()
+    function ε_k(v)
+        k1 = (v.x * 2 ./sqrt(3.) + v.y / sqrt(3)) 
+        k2 = v.y 
+        return  sqrt(1 + 4* cos(π*sqrt(3) * k1) * cos(π * k2) + 4* cos(π* k2)^2)
+    end
+
+    function v_k(k)
+        k1 = (k.x * 2 ./sqrt(3.) + k.y / sqrt(3)) 
+        k2 = k.y 
+        ek = ε_k(k)
+        return  1/(2. * ek) * Vertex2DComplex(- 4π*sqrt(3)* sin(π*sqrt(3) * k1) * cos(π * k2), 
+                                              - π * sin(π * k2) *4* cos(π*sqrt(3) * k1) - 8. * π * cos(π* k2)* sin(π * k2))
+    end
+    p = Plots.plot()
+    ωs =  -4.05:0.1:4.
+
+    for eta in [0., 0.1, 0.2]
+        res = []
+       
+        for ω in ωs
+            acc = 0
+            # println(ω_)
+            for s in [-1. + 0.0im, 1. + 0.0im]
+                # println(ω)
+                
+                mesh  = get_square_grid(1., 1., 57)
+                surf = Surface2D(mesh, k -> (s * ε_k(k) - ω))
+                level_set_edges = level_set!(surf, 0.0, 7, 1e-10)
+                η(k) = eta 
+                depth = 5
+                tol = 1e-6
+
+                for e in level_set_edges
+                    p1, p2 = e.p1, e.p2
+                    p1_new = find_zeros(p1, k ->  s * ε_k(k) - ω, k -> s * v_k(k), η, 20)
+                    p2_new = find_zeros(p2, k ->  s * ε_k(k) - ω, k -> s * v_k(k), η, 20)
+                    edge_new = Edge(p1_new, p2_new)
+                    acc += integrate1D(edge_new, k-> 1. /sqrt((v_k(k).x^2 + v_k(k).y^2)), depth, tol)
+                end
+            end
+            println("eta: ", eta, " omega: ", ω, " res: ", acc)
+            push!(res, real(acc))
+        end
+        Plots.plot!(ωs, res, label = string(eta), marker=(:circle,3))
+    end
+
+    display(p)
+
+end
+
 function test_runtime()
     p = test_runtime_LS()
     for η in [1e-5, 1e-4, 1e-3, 1e-2]
@@ -963,11 +1111,12 @@ function test_runtime()
     display(p)
 end
 
-default(palette = palette(:PiYG_10))
-# mesh_test2()
+# default(palette = palette(:PiYG_10))
+default(palette = palette(:tab10))
+# mesh_test1()
 # green_test()
-green_test_eta()
-
+# green_test_eta()
+green_test_complex2()
 
 
 
